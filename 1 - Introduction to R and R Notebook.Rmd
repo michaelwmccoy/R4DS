@@ -1,0 +1,331 @@
+---
+title: "Introduction to R programming Exercise 1"
+author: "Michael W. McCoy"
+date: "Last updated on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).
+
+**1. EXPLORING THE FUNCTIONALITY OF R**
+
+At its most basic, the command line is a bloated calculator. The basic operations are
+
+`+`  `-`  `*`  `/` `log` `sqrt` `^`
+
+for add, subtract, multiply, divide, log, square root, or raise to the exponent. Familiar calculator functions also work on the command line. Lets start out by just using R as a calculator. Try adding, subtracting, multiplying, powers, etc.
+
+For example, to take the natural log of 2, enter log(2) in the chunk below. Then try a couple operations of your own
+```{r calculator}
+ 
+
+
+```
+
+To do anything complicated, you have to store the results from calculations by assigning them to variables 
+For example, to assign the number “3” to a variable x, use
+```{r}
+x<-4
+```
+
+R automatically creates the variable *x* and stores the result (4) in it, but it doesn't print anything until you call the value by typing and submit the variable name "*x*".  This may seem strange, but you'll often be creating and manipulating huge sets of data that would fill many screens, so the default is to skip printing the results.
+
+To ask R to print the value, send down (CTRL Enter) 
+```{r}
+x
+```
+
+The number in brackets [1] at the beginning of the ourput line above is just R printing an index of element numbers; if you print a result that displays on multiple lines, R will put an index at the beginning of each line.  You could also type print(x) to ask R to print the value of the variable.
+
+```{r}
+print(x)
+
+```
+
+By default, a variable created this way is a vector, and it is numeric because we gave R a number rather than some other type of data.
+
+R can also assign character strings (enter using double quotes) to named variables. 
+
+```{r}
+z <- "Wake up Neo"  # single or double quotes needed
+z
+
+```
+
+In this above examples *x* is a numeric vector of length 1, which acts just like a single number.  z is a character vector of length 1. Note, however you can overwrite a variable you have named. For example, 
+
+```{r}
+x <- "Wake up Neo"  # single or double quotes needed
+z<-4
+x
+z
+```
+
+Now *x* is a character vector of length 1 and z is a numeric vector of length 1. 
+
+ 
+**2. NAMING VARIABLES**
+
+
+Variable names in R must begin with a letter, followed by letters or numbers. You can break up long names with a period, as in
+
+`very.long.variable.number.3`
+
+or an underscore
+
+`very_long_variable_number_3`
+
+but you can't use blank spaces in variable names (or at least it's not worth the trouble). Variable names in R are case sensitive, so a variable named Abc and one named abc 
+are different variables. In general you should use variable names that are long enough to remember what they represent but short enough to type easily
+
+Avoid using c, l, q, t, C, D, F, I, and T for variable names, because they are either built-in R functions or they are hard to tell apart.
+
+R does calculations with variables as if they were numbers.
+```{r}
+x<-5
+y<-2
+z1<-x*y  ## no output
+z2<-x/y  ## no output
+z3<-x^y  ## no output
+z2
+z3
+```
+
+Even though R did not display the values of x and y, it "remembers" that it assigned values to them. 
+You can also combine several operations into one calculation
+```{r}
+x<-3
+y<-(x+2*sqrt(x))/(x+5*sqrt(x))
+y
+```
+Parentheses specify the order of operations. To illustrate try the command C<-A+2*sqrt(A)/A+5*sqrt(A), which should not be the same as the one above; rather, it is  equivalent to C<-A + 2*(sqrt(A)/A) + 5*sqrt(A).
+
+The default order of operations is: (1) parentheses; (2) exponentiation, or powers, (3) multiplication and division, (4) addition and subtraction (**p**retty **p**lease **e**xcuse **m**y **d**ear **A**unt **S**ally).
+
+In complicated expressions you might start off by using parentheses to specify explicitly what you want, such as b = 12 - (4/(2^3))or at least b = 12 - 4/(2^3); a few extra sets of parentheses never hurt anything, although when you get confused it's better to think through the order of operations rather than flailing around adding parentheses at random.
+
+
+**The help system**
+
+R has a help system, although it is generally better for providing detail or reminding you how to do things than for basic ``how do I...?'' questions.
+  
+You can get help on any R function by entering ? and the the function name. For example:
+```{r}
+?lm
+?anova
+?plot
+library(help="lme4")
+??lmer
+```
+
+The Help menu on the tool bar provides links to other documentation, including the manuals and FAQs, and a Search facility (`Apropos' on the menu)which is useful if you sort of maybe remember part of the the name of what it is you need help on. Typing "help.start()" opens a web browser with help information. Typing example(command) (where command become the function your are trying to figure out) will run any examples that are included in the help page for command.
+
+Typing demo(topic)runs demonstration code on topic specificed.  To see all available demos type "demo()" by itself to list all available demos.
+                    
+By default, R's help system only provides information about functions that are in the base system and packages
+that you have loaded (which we will discuss libraries later on...dont worry about that for now). You can also search using the command "help.search" which  uses ``fuzzy matching'' --- for example, 
+
+```{r}
+help.search("log")
+```
+
+finds 528 entries (on my particular system) including lots of functions with ``plot'', which includes the letters ``lot'', which are \emph{almost} like ``log''.  
+
+Typing in the command *example* will run the examples (if any) given in the help for a particular function e.g. example(log). Another search funciton is RSiteSearch("topic") whcih does a full-text search of all the R documentation and the mailing list archives for information on (you need an active internet connection). 
+
+Try out one or more of these aspects of the help system.
+
+**Working with Vectors**
+
+Vectors in R are used to represent variables. R can assign sets of numbers or character strings to named variables using the c() command, for the "c" stands for concatenate. (R treats a single number or character as a vector, having just one element. If there are multiple numbers or characters (or strings of characters) then it will treat them as a multi element vector).
+
+For example contrast these three numeric vectors:
+```{r}
+x<-12333654588
+x1<-c(12333654588)
+x2<- c(1,2,333,65,45,88)
+x
+x1
+x2
+```
+And these three character vectors
+
+```{r}
+z <- "Wake up Neo" 
+z1 <- c("W","a","k","e","u","p","N","e","o") 
+z2 <- c("Wake up Neo")
+z3<-c("Wake", "up", "Neo")
+z
+z1
+z2
+z3
+```
+
+**Working with vectors**
+
+In the code below we can create a vector x that has 20 elements (I demonstrate 3 different ways to do this...). 1) we can use a colon to generate a sequence of whole numbers. 2) Alternatively we can use the `seq` command (for sequence) to specify the begining and end values as well as the number of elements desired (seq willd divide the range up into equal sized units). 3) Finally, you can use the `c` command (for concatenate) and specify the values manually.
+```{r}
+#Method 1
+x<-1:20
+length(x)
+print(x)
+
+#Method 2
+x<-seq(1,20,length=20)
+length(x)
+print(x)
+x<-seq(21,40,length=20)
+length(x)
+print(x)
+x<-seq(1,40,length=20)
+length(x)
+print(x)
+
+#Method 3
+x<-c(1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16, 17,18,19,20)
+length(x)
+print(x)
+```
+*Subset a vector*
+Given a vector x you can use integers in square brackets to indicate subsets of the vector. For example to see only the fifth value or element of the vector
+
+```{r}
+x<-seq(5,100,length=20)
+x[5]        # fifth element
+```
+You can also use vectors of indices, to extract multiple elements from a vector
+
+```{r}
+x[1:3]      # 1:3 is a shortcut for c(1,2,3)
+x[c(2,4,9)]
+```
+Some functions of vectors yield integer results and so can be used as indices too. For example, enter the function
+
+```{r}
+length(x)
+```
+
+Since the result is an integer, it is ok to use as follows,
+
+```{r}
+x[length(x)]
+```
+The beauty of this kind of construction when you are coding is that it will always give the last element of a vector x no matter how many elements x contains. This kind of thinking to make code very general (i.e. apply to a wide array of conditions) can be useful when doing some higher level data science or modeling applciations. 
+
+**Logical operators**
+Logical operations can also be used to generate indicators. First, enter the following command and compare with the contents of x,
+
+```{r}
+ x < 25
+
+```
+Now you can use those logical outcomes about the validity of the logical statement to subset the vector to retain only a subset of values that meet your criteria. For instance..
+```{r}
+x[x < 25]
+#or#
+x[x > 25]
+#or#
+x[x != 25] #note here I am using != to mean "not equal" to 10
+x[x == 25] #note here I am using == to mean "is exactly equal" to 10
+```
+The `which` command will identify the locations of the elements corresponding to TRUE. For example, try the following and compare with your vector x.
+
+```{r}
+which(x < 25)
+which(x != 25) #note which number is missing from the list below
+```
+
+Indicators can be used to change individual elements of the vector x. For example, to change the fifth element of x to 0,
+
+```{r}
+x[5] <- 0
+x
+```
+**Calculations on Vectors**
+R can be used as a calculator for arrays of numbers too. Create a second numerical vector y of the same length as x you created above. Now try out a few ordinary mathematical operations on the whole vectors of numbers. (Hint: this is where you can use the idea of coding for generality from above...you dont have to know how long x is if you use the `length` command -e.g. y<-seq(2,2000,length=length(x)) will generate a vector y that has the same number of elements as x).
+
+
+```{r}
+y<-seq(2,40,length=length(x))
+z <- x * y
+z
+z1 <- y - 2 * x
+z1
+#note that the 5th element seems out of place in these if you did not change the conversion of that value to zero above in your vector x.
+```
+Examine the results to see how R behaves. It executes the operation on the first elements of x and y, then on the corresponding second elements, and so on. Each result is stored in the corresponding element of z. Logical operations are the same,
+
+```{r}
+z <- x >= y              # >= is greater than or equal to
+z
+z <- x[abs(x) <= abs(y)]  # absolute values
+z
+```
+What does R do if the two vectors are not the same length? The answer is that the elements in the shorter vector are “recycled”, starting from the beginning. This is basically what R does when you multiply a vector by a single number. The single number is recycled, and so is applied to each of the elements of x in turn.
+
+```{r}
+x
+z <- 2 * x
+z
+y<-c(2,1)
+z<-y*x
+z
+```
+**Challenge Questions - you should copy and paste the sections below into a new R notebook to be completed and submitted as an R notebook for credit**
+
+1. Assign a set of 100 numbers to a variable x. Make sure it includes some positive and some negative numbers. Display the contents of the vetor afterward. Is it really a vector? Enter is.vector(x) to confirm.
+
+```{r}
+
+```
+
+2. Print the 3rd and 6th elements of x with a single command.
+
+```{r}
+
+```
+
+3. Print (i.e. display) all elements of x that are non-negative.
+
+```{r}
+
+```
+
+4.Change the last value of your x vector to a different number. Change the 2nd, 6th, and 10th values of x to 1, 2, 3 with a single command.
+    
+```{r}
+
+```
+
+5. For each of the following examples determine why the code does not work and correct it. Use R's built in help functions if you have trouble on the second set.
+```{r}
+
+#my_variable <- 10
+#my_varıable
+```
+
+```{r}
+x<-c(2,34,61,21,NA ,32)
+y<-c(5,56,789,23,3,90)
+z <- mean(x*y)
+z
+```
+
+
+
+
