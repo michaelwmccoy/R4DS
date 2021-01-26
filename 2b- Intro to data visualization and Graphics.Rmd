@@ -92,9 +92,9 @@ library(readr, warn.conflicts=FALSE)
 library(dplyr, warn.conflicts = FALSE)
 
 # Read and inspect the data
-mammals <- mammals <- read.csv("~/Dropbox/Stats - 2020/R for data science/data/mammals.csv",na.strings="",stringsAsFactors =FALSE)
+mammals <- mammals <- read.csv("mammals.csv",na.strings="",stringsAsFactors =FALSE)
 #or
-mammals <- read_csv("~/Dropbox/Stats - 2020/R for data science/data/mammals.csv",na = c(""))
+mammals <- read_csv("mammals.csv",na = c(""))
 
 ```
 Use the head function to view the first few lines of the data frame on the screen. You’ll see that every row represents the data for a different mammal species.
@@ -193,7 +193,7 @@ Our goal here is to find a plot type that clearly and efficiently visualizes the
 Read the data file into a new data frame.
 
 ```{r}
-x<- read.csv("~/Dropbox/Stats - 2020/R for data science/data/fruitflies.csv",na.strings="",stringsAsFactors =FALSE)
+x<- read.csv("fruitflies.csv",na.strings="",stringsAsFactors =FALSE)
 head(x)
 ```
 
