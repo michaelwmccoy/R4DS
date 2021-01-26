@@ -1,0 +1,302 @@
+---
+title: "Introduction to Data Visualization"
+output: html_notebook
+---
+
+What is a graphic? 
+How can we succinctly describe a graphic? 
+And how can we create the graphic that we have described? ggplot2 stemmed out of an attempt to provide the answers to these questions.  Well more precisely ggplot2 is the consequence of development of a "grammar of graphics"...hence the gg part of ggplot is for "grammar of graphics".  "The grammar of graphics"" was published as a book in 2005 by Wilkinson, Anand, and Grossman. They  proposed a grammar that can be used to describe and construct a wide range of statistical graphics. Why "grammar", well the definition of a grammar is "the fundamental principles or rules of an art or science".  This grammar was developed into an parameterization by Hadley Wickham (author of the package ggplot2) based around the idea of building up a graphic from multiple layers of data. Having access to a grammar of graphics provides us with a tool that we can use to concisely describe and build the components of a graphic allowing us to move beyond named graphics (e.g., the “scatterplot”) which will provide insight into the deep structure that underlies statistical graphics. 
+
+The way ggplot works is that it creates a graphic based on layers specified via the grammar of the R programming implementation of the the Grammar of graphics. It use the basic elements of any figure to start out and build a graphic piece by piece. For example, the below figure illustrates all of the basic components of what we would call a scatter plot.  
+
+
+From left to write, we have 1) geometric objects, 2) scales and coordinate system,and 3) plot annotations.  If we layer these on top of one another we get
+
+
+So there are some basic components of a layered grammar that we can use to build a plot. 
+
+1) data and aesthetic mappings,
+2) geometric objects,
+3) scales
+4) facet specification.
+5) transformations
+6)coordinate system.
+
+Together, the data, mappings, statistical transformation, and geometric object form a layer. A  plot  may  have  multiple  layers,  for  example,  when  we  overlay  a  scatterplot  with  a
+smoothed line.
+
+```{r}
+
+p=ggplot(diamonds,aes(x=carat,y=price))
+p1=p+geom_point(aes(shape=color))+geom_smooth(aes(x=carat,y=price))
+p1
+```
+
+<b>Add Labels to a plot<b/>
+
+In addition to getting the aesthetics of the data presentation in a form we are happy with, we often want to adjust the appearance and content of the labels.  For example change the x and y axis titles.  Or you may want to change the font size or color.  These tasks can be accomplished by using the `labs` and `theme` operators.  
+
+For example, to add labels to the plot above we can add the following code:
+```{r}
+p2=p1+labs(title="Scatter Plot",x="Carat",y="Price")
+print(p2)
+```
+
+There are many commands that fall under the `Theme` heading.  When you are advanced you can define many of these things inside your own theme function.  But for now we will illustrate how each of the elements can be manipulated independently.  We do this by calling the function `theme()` and then specifying the desired appearance of each label and title using `axis.text.?` to change the size of the text, where the question mark specifies which axis you wish to change.  And `axis.title.?` to change the label.  `plot.title` is used to change the name at the top of the plot. `element_text()` is the actual function used to change the text size and appearance.
+
+```{r}
+p3=p2+theme(plot.title=element_text(size=40,face="italic"),
+            axis.text.y=element_text(size=12),axis.text.x=element_text(size=12),
+            axis.title.y=element_text(size=20),axis.title.x=element_text(size=20))
+print(p3)
+```
+
+Finally, you may want to generate your plot so that the data is presented in multiple panels.  As with most things in R, there are multiple ways to do that.  THe most convenient is to use `facets`.  For example, the above plot is pretty busy and so we can not really distinguish what is happening within each cut type.  So we can separate these so that each cut is plotted in its own window by using the command `facet_wrap(formula)`.
+
+```{r}
+p3+facet_wrap(~cut)+labs(shape="Hue")
+```
+
+If you want more practice, work through chapter 3 of R for Data Science textbook!
+
+
+**Working with DATA**
+
+*Data set 1: Mammal body mass*
+
+These data were published as a data paper in Ecology and deposited in the Ecological Archives (F. A. Smith, S. K. Lyons, S. K. M. Ernest, K. E. Jones, D. M. Kaufman, T. Dayan, P. A. Marquet, J. H. Brown, and J. P. Haskell. 2003. Body mass of late Quaternary mammals. Ecology 84: 3403.) See the metadata for a description.
+
+Most of the variables are categorical, with multiple named categories. 
+  “Continent” includes mammals on islands (“Insular” category) 
+  “Oceanic” refers to marine mammals. 
+  "Body mass" is reported in grams and is the sole numeric variable. 
+  “status” indicates whether a species is:
+      currently present in the wild (extant), 
+      extinct as of late Pleistocene (extinct), 
+      extinct within the last 300 years (historical), 
+      or an introduced species (introduction).
+
+
+*Read and examine the data*
+
+The original data are available on the course canvas site as mammals.csv. And are (currently at least) stored on the server at UBC) Download the file to your computer and open in a spreadsheet program (e.g., Excel, Calc) to have a look at it.
+
+Start R and read the contents of the file to a data frame. You will need to modify the default argument that identifies missing data to na.strings="“ (or na=”“ if you are using read_csv from the readr package) because in this data file”NA" is used to symbolize North America in the continent column rather than missing data (don’t do this in your own data).
+
+Use the head function to view the first few lines of the data frame on the screen. You’ll see that every row represents the data for a different mammal species.
+
+```{r}
+# Load the packages you might need
+# (I'm including warn.conflicts=FALSE just to shorten the output here)
+library(readr, warn.conflicts=FALSE)
+library(dplyr, warn.conflicts = FALSE)
+
+# Read and inspect the data
+mammals <- mammals <- read.csv("~/Dropbox/Stats - 2020/R for data science/data/mammals.csv",na.strings="",stringsAsFactors =FALSE)
+#or
+mammals <- read_csv("~/Dropbox/Stats - 2020/R for data science/data/mammals.csv",na = c(""))
+
+```
+Use the head function to view the first few lines of the data frame on the screen. You’ll see that every row represents the data for a different mammal species.
+
+```{r}
+head(mammals)
+```
+*Frequency tables*
+
+Which continent has the greatest number of mammal species? Which has the least? Make a table of the frequency of cases on each continent (remember that the category “NA” in continent stands for North America, not missing data). 
+
+```{r}
+# Number of mammal species on each continent
+table(mammals$continent)
+```
+You’ll notice in the frequency table for the variable “continent” that there is a typo in the data. One case is shown as having the continent “Af” rather than “AF”. Fix this using the command line in R and recalculate the frequency table.
+
+```{r}
+# Fix "Af"
+which(mammals$continent=="Af") #identifies which entry is wrong
+
+```
+```{r}
+mammals$continent[322]<-"AF"
+table(mammals$continent)
+```
+
+**Challenge Question 1**
+
+How many extinct mammals are recorded in the data file? Use a frequency table to find out.
+```{r}
+
+```
+
+Create a two-way frequency table (contingency table) showing the status of mammal species on each continent.
+Judging by eye, which continent has the greatest number of extinctions relative to the number of extant species?
+
+```{r}
+
+```
+
+
+**Graphing Frequency Distributions**
+```{r}
+# Load the packages you might need
+library(ggplot2, warn.conflicts=FALSE)
+```
+
+Plot the number of mammal species on each continent using a simple bar graph. Include a label for the y axis.
+
+```{r}
+# Histogram of mammal species by continent
+ggplot(mammals, aes(x=continent)) + 
+  geom_bar(stat="count", fill = "firebrick") +
+  labs(x = "Continent", y = "Frequency") +
+  theme_classic()
+```
+
+**Challenge Question set 2**
+The plot categories are listed in alphabetical order by default, which is arbitrary and makes the visual display less efficient than other possibilities. Redo the bar graph with the continents appearing in order of decreasing numbers of species.
+```{r}
+
+```
+
+
+Create a new variable in the mammal data frame: the log (base 10) of body mass. 
+```{r}
+# Add a new variable, log10 of body mass
+mammals$logmass <- log10(mammals$mass.grams)
+```
+
+Generate a histogram of log body mass. Morphological data commonly require a log-transformation to analyze.
+
+Redo the previous histogram but use a bin width of 2 units (Use your help functions to figure out how to do this). How much detail is lost?
+```{r}
+
+```
+    
+Redo the histogram but try a bin width of of 1; then try 0.5; and then 0.1. Which bin width is superior?
+```{r}
+
+```
+
+Redo the histogram, but display probability density instead of frequency.
+```{r}
+
+```
+
+########################################
+**Data set 2: Fly sex and longevity**
+
+The data are from L. Partridge and M. Farquhar (1981), Sexual activity and the lifespan of male fruitflies, Nature 294: 580-581. The experiment placed male fruit flies with varying numbers of previously-mated or virgin females to investigate how mating activity affects male lifespan. 
+
+Our goal here is to find a plot type that clearly and efficiently visualizes the patterns in the data, especially the differences among groups.
+
+Read the data file into a new data frame.
+
+```{r}
+x<- read.csv("~/Dropbox/Stats - 2020/R for data science/data/fruitflies.csv",na.strings="",stringsAsFactors =FALSE)
+head(x)
+```
+
+Use a strip chart to examine the distribution of longevity in the treatment groups. 
+```{r}
+# Strip chart using ggplot
+ggplot(x, aes(x=treatment, y=longevity.days)) +
+  geom_point(color = "firebrick", size = 3, width = 0.15) +
+  labs(x = "Treatment", y = "Longevity (days)") + 
+  theme_classic()
+```
+    
+This can be difficult to interpret since the points might overlap. Try the jitter method to reduce overlap between points. If needed, adjust the size or rotation of the treatment labels so that they all fit on the graph. What pattern of differences between treatments in longevity is revealed?
+
+```{r}
+# Strip chart using ggplot
+ggplot(x, aes(x=treatment, y=longevity.days)) +
+  geom_jitter(color = "firebrick", size = 3, width = 0.15) +
+  labs(x = "Treatment", y = "Longevity (days)") + 
+  theme_classic()
+```
+
+Compare the strip chart to a box plot of the same data. Is the pattern in the data as clear in both types of plot?
+```{r}
+# Box plot using ggplot
+ggplot(x, aes(x=treatment, y=longevity.days)) +
+  geom_boxplot(fill = "goldenrod1", width = 0.5) +
+  labs(x = "Treatment", y = "Longevity (days)") + 
+  theme_classic()
+```
+
+The variable thorax stands for thorax length, which was used as a measure of body size. The measurement was included in case body size also affected longevity. Produce a scatter plot of thorax length and longevity. Make longevity the response variable (i.e., plot it on the vertical axis). Is there a relationship?
+
+```{r}
+# Scatter plot with ggplot
+ggplot(x, aes(x = thorax.mm, y = longevity.days)) + 
+    geom_point(size = 3, col = "firebrick") + 
+    labs(x = "Thorax length (mm)", y = "Longevity (days)") + 
+    theme_classic()
+```
+
+Redraw the scatter plot but this time use different symbols or colors for the different treatment groups. Add a legend to identify the symbols. Describe the pattern of differences between treatments.
+
+```{r}
+# Scatter plot with separate colors for each group using ggplot
+ggplot(x, aes(x = thorax.mm, y = longevity.days, colour = treatment, 
+            shape = treatment)) + 
+    geom_point(size = 2) + 
+    labs(x = "Thorax length (mm)", y = "Longevity (days)") + 
+    theme_classic()
+```
+
+Add scatterplot smoother or linear regressions to the previous figure, one for each group. Do the differences in longevity among the treatments stand out when variation in body size is incorporated?
+
+```{r}
+ggplot(x, aes(x=thorax.mm, y=longevity.days, colour = treatment, 
+            shape = treatment)) + 
+    geom_point(size = 2) +
+    geom_smooth(method = lm, size = 1, se = FALSE) +
+    labs(x = "Thorax length (mm)", y = "Longevity (days)") + 
+    theme_classic()
+```
+
+**Challenge Question Set 3**
+
+Below are some data on the maximum growth rate rmax of laboratory populations of the green alga *Chlorella vulgaris* as a function of light intensity (mu per m^2 per second). These experiments were run during the system-design phase of the study reported by
+(Fussman 2000).
+
+To analyze these data in R, first enter them as numerical vectors using either the command as.vector or c (concatenate): 
+
+```{r}
+Light=c(20,20,20,20,21,24,44,60,90,94,101)
+rmax=c(1.73,1.65,2.02,1.89,2.61,1.36,2.37,2.08,2.69,2.32,3.67)
+```
+
+The function c combines the individual numbers into a vector.
+
+Draw an informative histogram of the growth rates.
+```{r}
+
+
+
+```
+
+Now investigate how light intensity affects algal rate of increase, 
+
+```{r}
+
+
+
+```
+Change the color and point types and redraw.
+
+```{r}
+
+
+
+```
+Add a best fit line and error envelope to the plot.
+
+```{r}
+
+```
+
+**The End**
+

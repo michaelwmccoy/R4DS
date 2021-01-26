@@ -1,0 +1,424 @@
+---
+title: "Data Wrangling"
+author: "Michael W. McCoy"
+date: "Last updated on `r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+---
+
+
+**Data Wrangling**
+This week we will explore data manipulation and techniques for summarizing data using the library `dplyr`. For most of this exercise we will be working with Base R and working within the "Tidyverse"
+
+```{r}
+#You may need to o install the tidyverse using "install.packages("tidyverse")
+library(tidyverse) # loads readr, dplyr and many others libraries useful for working with data including ggplot2
+```
+
+In this exercise we will learn to 
+  1) Read data from a CSV file
+  2) Identify and convert data types in your data file
+  3) Manipulate data frames
+  4) Extract subsets of data using base R
+  5) Extract subsets of data using 'dplyr'
+  6) Add new variables to a data frame, select, sort, aggregate and summarize the data in a data frame.  
+  
+*Working with Data Sets*
+Data frames are the most common and convenient data objects to work with in R. However, you may also run across matrices and lists which are conceptually not too different from a data frame and much of the logic you learn from working with data frames can be translated among different data objects.
+
+Tibbles are a type of data frame from the 'tidyverse' that can be slightly easier to work with than the base R version. But in general I have found little difference with regards to which type of data frame I use (base R data.frame or a Tibble).  In fact, most functions will work on both types of data frames. It is also easy to convert back and forth between the two types of data frame.
+For example using th "mammals" data set from last week
+
+```{r}
+# convert data frame to tibble type
+mammal <- as_tibble(mammal)                               
+
+# do the reverse
+mammal <- as.data.frame(mammal, stringsAsFactors = FALSE)
+```
+
+*Read data from csv file stored on your computer*
+
+The following chunk of code provides 3 different ways in base R to read in a data file for example “mammal.csv” into a data frame we wail call my data. The stringsAsFactors = FALSE argument tells R to keep each character variable as-is rather than convert to factors, which are a little harder to work with.
+
+```{r}
+# base R
+mydata <- read.csv(file.choose(), stringsAsFactors = FALSE) # This should call up a window where you can navigate to the file
+mydata <- read.csv("/directoryname/mammal.csv", stringsAsFactors = FALSE) #add the file path in place of "directory_name" if you have a mac add a ~ to the front end "~//mammal.csv"
+mydata <- read.csv(url("http://location_url/filename.csv"), stringsAsFactors = FALSE) #to download from the web or a cloud app
+```
+
+To read in data using the readr package from the tidyverse, everything should be the same as above except you use the function read_csv()
+
+```{r}
+# using readr package
+mydata <- read_csv("/directoryname/mammals.csv")
+```
+
+There also a a few optional arguments that can help save you time and frustration if there are problems with the datafile that are preventing the data from having the correct classification or spelling (more below on data classification). For instance, spaces can be sometimes introduced accidentally during data entry and R will treats “word” and " word" as being different which can lead to analytical issues later on (e.g. you may have too many levels of a factor because “word” and " word" are being read as two different levels of a factor.  To deal with this you can add `strip.white = TRUE` which removes spaces at the start and end of character elements. Another useful option is `na.strings` in Base R and na in readr which tell R to treat both NA and empty strings in columns of character data as missing values rather than as the value "NA". You do not need to specify this in most cases because it is the default setting, but I highlight it here because might in some cases need to alter the value coding for missing values. In other words you could replace "NA" in the code below with your own indicator of missing data (e.g. "." or "no_data"), For example, `read.csv("filename.csv", stringsAsFactors = FALSE,strip.white = TRUE, na.strings = c("no_data", "") ) `
+
+```{r}
+# base R method:
+mydata <- read.csv("filename.csv", stringsAsFactors = FALSE,
+                  strip.white = TRUE, na.strings = c("NA", "") )
+# using readr package
+mydata <- read_csv("/directoryname/filename.csv", na = c("NA", ""))
+```
+
+*Checking your Data*
+
+AFter you have imported your data there are a variety of tools that you can use to visualize the data frame to make sure it is what you were expecting. Here are a list of the most helpful...
+
+To view small aspects of the data frame
+```{r}
+mydata             # if a tibble, print first few rows; otherwise prints all
+print(mydata, n=5) # print the first 5 rows
+head(mydata)       # print the first few rows
+tail(mydata)       # print the last few rows
+names(mydata)      # see the variable names
+rownames(mydata)   # view row names (numbers, if you haven't assigned names)
+```
+Commands that provide useful summaries of the entire data frame
+
+```{r}
+str(mydata)                     # summary of variables in frame
+is.data.frame(mydata)           # TRUE or FALSE
+ncol(mydata)                    # number of columns in data
+nrow(mydata)                    # number of rows
+names(mydata)                   # variable names
+rownames(mydata)                # row names
+```
+
+
+*Variable types in your data*
+
+When you read your data into R, the program automatically classifies each of your variables (i.e. columns) into data types based on the objects in the column. 
+
+1. Columns with only numbers are made into numeric or integer variables.
+2. Columns that have any non-numeric characters (even its supposed to be a numeric data column and there was a data entry error) is read in as either characters (read_csv)  or factors (read.csv). By default, read.csv() converts character variables into factors, which can be annoying to work with. Circumvent this by specifying stringsAsFactors = FALSE in the read.csv() call.
+
+Factors are categorical variables whose categories represent levels. These levels have names, but they additionally have a numeric interpretation. If a variable A has 3 categories “a”, “b”, and “c”, R will order the levels alphabetically, by default, and give them the corresponding numerical interpretations 1, 2, and 3. This will determine the order that the categories appear in graphs and tables. You can always change the order of the levels. For example, if you want “c” to be first (e.g., because it refers to the control group), set the order as follows:  A <- factor(A, levels = c("c","a","b"))
+
+There are a variety of good utility functions that you can use to check how R classified your data.
+
+```{r}
+str(mydata)            # Base R structure
+glimpse(mydata)        # command from dplyr package
+```
+
+*Reclassifying your data*
+If your data have not been classified correctly you can convert among types.  However, its important to recognize that if you are converting factors to numeric values or integers, you must first convert to the data to characters. Converting factors directly to numeric or integer data can lead to unwanted outcomes.
+```{r}
+mydata$x <- as.character(mydata$x)  # factor to character
+mydata$x <- as.factor(mydata$x)     # character to factor 
+mydata$x <- as.numeric(as.character(mydata$x)) # factor to character to numeric
+```
+
+*Saving your data frame*
+You can also save a manipulated version of a data frame or a new set of data (e.g. from a simulation) as a csv file.
+
+```{r}
+# base R
+write.csv(mydata, file="/directoryname/filename.csv", rownames = FALSE)
+
+# Using readr package
+write_csv(mydata, path = "/directoryname/filename.csv")          
+```
+
+**Tips for creating your Data File so that it plays nicely with R**
+
+It is easiest to enter data using a spreadsheet and use the standard approach of columns for variables and rows for individual sampling units. Carefully considering what you should put into your spreadsheet may help save you some time and frustration when it.
+
+  a. Column names should be brief but informative names for variable using plain text 
+  b. Detailed explanations of variables can be kept in a separate metadata text file). 
+  c. You should avoid spaces in variable names – use a dot or underscore instead (e.g., mass.grams or mass_grams). 
+  d. Leave missing cells (i.e. no data) blank and avoid non-numeric characters in columns of numeric data. 
+
+If you enter in a character for missing data, R will assume that the entire column is non-numeric. For example, avoid using a question mark “12.67?” to indicate a number you are not sure about. 
+  
+  e. Do not put in a zero for missing data...zeros are assumed to be data!
+  f. Dates should be in international format (YYYY-MM-DD) or use separate columns for year, month and day.
+  g. Avoid commas in your data set entirely, because they are column delimiters in your .csv file.
+
+There are two common layouts for data: "Long" vs "wide" layouts.  
+
+*Wide layout*
+Plot    Site      species1   species2   species3
+ 1        A           0          12         4
+ 2        A          88           2         0
+ 3        B          12           4         1   
+...
+
+*Long layout*
+Plot   Site  Species Number
+ 1      A      1      0
+ 1      A      2     12
+ 1      A      3      4
+ 2      A      1     88
+ 2      A      2      2
+ 2      A      3      0
+ 3      B      1     12
+ 3      B      2      4
+ 3      B      3      1
+...
+
+In general a “long” layout is recommended for conducting analyses in R, rather than a “wide” layout. However the "wide layout" can sometimes be more feasible for accurate data entry. You can convert between these, however before learning how to do that there are a some important utility function for data wrangling that you need to be familiar with. 
+
+
+**Data wrangling with dplyr and tidyr**
+
+The package `dplyr` has been said to be the most perfectly suited package for streamlining workflow for real analytics.  Its utility comes from the fact that it uses a combination of five primary verbs (i.e. functions or commands) and a process called chaining.
+
+The five verbs are
+`filter()`
+`select()`
+`mutate()`
+`arrange()`
+`summarize()`
+
+The `filter()` command allows you to subset a dataset only retaining data for rows that you are interested in.  For example, we will use one of `R's` built in data sets on diamond cuts to illustrate different aspects of the packages utilities. Lets load and examine the data set first.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+str(diamonds)
+head(diamonds)
+```
+Okay, lets use the filtering command to subset these data so that we only retain values for the cases where `cut` variable is `"ideal"`.
+```{r}
+idl.diamonds=filter(diamonds,cut=="Ideal")
+idl.diamonds
+```
+
+Similarly we can choose only a subset of the columns (variables) in the data frame. For example, we may want to simplify things by creating a new working data frame that only has the variables of interest for a given analysis.  In this case lets create a data set that only retains the variables:"cut","carat","color","price",and "clarity".  This is easily accomplished using the `select()` command.
+
+```{r}
+sub.diamonds=select(idl.diamonds, carat, cut, color, price, clarity)
+```
+
+Another very common task in data analytic or any programming task is adding variables.  We can do this using the `mutate()` command.  For example we might want to add a variable that reflects the costs of diamonds per carat of quality.
+
+```{r}
+price.per=mutate(sub.diamonds,price_per=price/carat)
+price.per
+```
+
+`arrange()` does the same thing as the `order()` function we learned earlier, but using `arrange()'makes the syntax much simpler.  
+
+We will use a simple made up data set to illustrate this function.
+```{r}
+scramble=data.frame(num_var = c(2,3,5,1,4))
+arrange(scramble,num_var)
+arrange(scramble,desc(num_var))
+```
+
+Finally the summarize() command does exactly what it sounds like it does...it allows you to generate summaries or summarized versions of the data.  For example we can use it to calculate a simple mean using our subset data set from above.
+```{r}
+summarize(sub.diamonds, avg_price = mean(price, na.rm = TRUE))
+```
+
+We can also use this to generate more complicated summaries of the data using a sub function called `group_by()`.  For example we can go back to the original diamonds data set and summarize the data by calculating means according to all cut types.
+```{r}
+head(diamonds)
+d1=group_by(diamonds,cut,color)
+summarize(d1, avg_price = mean(price, na.rm = TRUE),sd.price=sd(price,na.rm=TRUE))
+```
+
+The real power of this library is not fully realized however until you start `chaining` commands together.  You can chain together different verbs of `dplyr` using the `%>%` operator.  All this operator does is allow you to connect commands together so that the output of one command becomes the input for the next down a chain.  For example we can do all the steps above on the diamonds data set in a  single chain of commands.
+
+```{r}
+final.diamonds= diamonds %>%
+                filter(cut=="Ideal") %>%
+                select(carat, cut, color, price, clarity) %>%
+                mutate(price_per_carat = price/carat)
+```
+This chained set of syntax literally says:
+– “Take the diamonds data set’ ”
+– “Then filter it, keeping only the rows where ‘cut’ equals ‘Ideal’ ”
+– “Then select specific variables, ‘carat’, ‘cut’, ‘color’, ‘price, ‘clarity’ ”
+– “Then create a new variable, ‘price_per_carat’ using ‘mutate()’ ”
+
+Finally, `dplyr` can also be a powerful tool for data exploration when paired with `ggplot`  Its power comes from the fact that you can chain together dplyr commands and ggplot commands. For example we can create a box plot for just the ideal diamonds by
+
+```{r}
+  diamonds %>%                                        # Start with the 'diamonds' dataset
+  filter(cut == "Ideal") %>%                        # Then, filter down to rows where cut == Ideal
+  ggplot(aes(x=color,y=price)) +                     # Then, plot using ggplot
+  geom_boxplot()      
+
+diamonds %>%                                        # Start with the 'diamonds' dataset
+  filter(cut == "Premium") %>%                        # Then, filter down to rows where cut == Ideal
+  ggplot(aes(x=carat,y=price)) +                     # Then, plot using ggplot
+  geom_point()
+
+```
+
+or a histogram by
+
+```{r}
+diamonds %>%                                        # Start with the 'diamonds' dataset
+  filter(cut == "Ideal") %>%                        # Then, filter down to rows where cut == Ideal
+  ggplot(aes(price)) +                            # Then, plot using ggplot
+    geom_histogram() +                              # and plot histograms
+    facet_wrap(~ color)                             # in a 'small multiple' plot, broken out by 'color'
+```
+
+**Wide to Long and Back again**
+In R most functions expect data to be in a long format rather than a wide format, however ease of data entry and data formatted for some other statistical software (e.g. SPSS) may result in data in the wide format. To deal with this problem there are some nifty methods using the `gather()` and `spread()` functions from the `tidyr` library.
+
+If you do not already have tidy R you will need to install it.
+
+First,  we will use the below code that I borrowed from to generate data in a wide and long format.  The data are exactly the same for both formats. Then we will convert each to the other format below.
+
+First we will make the wide formatted data....take note on the generation of these data...
+
+```{r}
+wide <- read.table(header=TRUE, text='
+ subject sex control cond1 cond2
+       1   M     7.9  12.3  10.7
+       2   F     6.3  10.6  11.1
+       3   F     9.5  13.1  13.8
+       4   M    11.5  13.4  12.9
+')
+# Make sure the subject column is a factor
+wide$subject <- factor(wide$subject)
+str(wide)
+wide
+```
+
+And now the same data in the long format.
+
+```{r}
+long <- read.table(header=TRUE, text='
+ subject sex condition measurement
+       1   M   control         7.9
+       1   M     cond1        12.3
+       1   M     cond2        10.7
+       2   F   control         6.3
+       2   F     cond1        10.6
+       2   F     cond2        11.1
+       3   F   control         9.5
+       3   F     cond1        13.1
+       3   F     cond2        13.8
+       4   M   control        11.5
+       4   M     cond1        13.4
+       4   M     cond2        12.9
+')
+# Make sure the subject column is a factor
+long$subject <- factor(long$subject)
+str(long)
+```
+
+
+To convert the data from wide to long format we will use the `gather` function.  This function has several key pieces of input (arguments) that are needed. These are
+
+`gather(data,key,value,...sources,factor key)`
+  # - data: Data object
+  # - key: Name of new key column (made from names of data columns)
+  # - value: Name of new value column
+  # - ...: Names of source columns that contain values
+  # - factor_key: Treat the new key column as a factor (instead of character vector)
+  
+So to implement we just need to run:
+```{r}
+require(tidyr)
+wide_to_long <- gather(wide, condition, measurement, control:cond2, factor_key=TRUE)
+wide_to_long
+```
+
+In this example, the source columns that are gathered are specified with `control:cond2`. This means to use all the columns, positional, between `control` and `cond2`. Another way of doing it is to name the columns individually, as in:
+
+```{r}
+wide_to_long <- gather(wide, condition, measurement, control, cond1, cond2, factor_key=TRUE)
+wide_to_long
+```
+
+In some cases you may want to use `gather()` internally in some larger function and so you will want to use variables containing column names rather than the column names themselves. To do this use the `gather_()` function instead.
+
+```{r}
+keycol <- "condition"
+valuecol <- "measurement"
+gathercols <- c("control", "cond1", "cond2")
+
+gather_(wide, keycol, valuecol, gathercols)
+```
+
+To convert our data from the long format to the wide format we do the same steps except we use the `spread` function instead of the `gather` function.
+
+```{r}
+long_to_wide <- spread(wide_to_long, condition, measurement)
+long_to_wide
+```
+
+**Contrasting base R and dplyr**
+
+Below are some useful data manipulation approaches using base R functionality and the new functions. It is useful to learn both because the base R version gives a more intuitive understanding of what th code is actually doing, where as the new functionality of dply provides some efficient tools.  I often use these interchangeably depending on the application, I prefer one or the other.
+
+*Transform a column (variable) within a data frame*
+
+For example, log transform a variable named mass.grams and save the result as a new variable named logsize in the data frame. (log yields the natural log, whereas the function log10 yields log base 10.)
+
+```{r}
+mydata$logsize <- log(mydata$mass.grams)            # base R
+str(mydata)
+mydata <- mutate(mydata, log10size = log10(mass.grams)) # using the dplyr package
+str(mydata)
+
+```
+
+
+
+*Delete a variable from data frame*
+
+For example, to delete the variable species from mydata, use
+```{r}
+
+mydata$species <- NULL # Base R -- NULL must be upper case
+mydata <- select(mydata, -species) # dplyr method
+```
+
+*Extract a data subset*
+
+There are several ways. One is to use indicators inside square brackets using the following format: mydata[rows, columns]. Be sure to look after each line below to see what the commands did to the data set
+
+```{r}
+newdata <- mydata[ , c(2,3)]   # all rows, columns 2 and 3 only;
+newdata <- mydata[ , -1]       # all rows, leave out first column
+newdata <- mydata[1:3, 1:2]    # first three rows, first two columns
+```
+
+
+Alternatively you can use logical statements and variable names within the square brackets.
+
+```{r}
+newdata <- mydata[mydata$continent == "AF" & mydata$logsize < 25,  c("continent","status","order")]
+```
+
+
+The subset command in base R is easy to use to extract rows and columns. Use the select argument to select columns (variables). For example, to pull out rows corresponding to continent AF with logsize < 25, and the three variables, "continent","status","order" you could  use the following.
+
+```{r}
+newdata <- subset(mydata, continent == "AF" & mass.grams < 25, select = c(continent,status,order))
+```
+
+
+You can also use dplyr’s filter and select commands. Use select to extract variables (columns), and use filter to select rows, as in the following examples.
+
+```{r}
+# extract rows
+locations <- filter(mydata, continent == "AF")
+
+# extract columns
+newdata <- select(mydata, continent,status,order) 
+
+```
+
+
+*Sort and order the rows*
+
+To re-order the rows of a data frame mydata to correspond to the sorted order of one of its variables, say x, use
+
+```{r}
+mydata.x <- mydata[order(mydata$x), ]  # base R
+mydata.x <- arrange(mydata, x)         # dplyr method
+```
+
