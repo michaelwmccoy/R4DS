@@ -1,0 +1,96 @@
+---
+title: "Playign with Sampling"
+output: html_notebook
+---
+
+How big an effect are you expecting? What are the chances that you would detect it? What sample size would you need to have a reasonable chance of succeeding? How narrow a confidence interval around the estimated effect would you be happy with? This R tutorial shows how R can be used to address some of these questions.
+
+First we need to get familiar with simulating data.
+
+*Simulate data*
+
+Two vector commands we will use frequently are `c` to concatenate values and `rep` to replicate values. For example,
+
+```{r}
+x1 <- c(1,2,3,4,5)             # concatenate the numbers in a vector
+x2 <- c(x1, c(9,8,7))          # combine two vectors into one
+x <- rep(1,10)                 # make a vector with ten 1's
+x <- rep(c(1,2), 5)            # make the vector 1 2 1 2 ... (5 times)
+A <- rep(c("a","b"), c(4,2))   # make the vector a a a a a b b
+
+```
+
+*Sampling/simulating data from a Normally-distributed population*
+
+In the following example we sample 5 random numbers from a normal population having a mean of 2 and a standard deviation of 10.
+```{r}
+x <- rnorm(5, mean = 2, sd = 10)
+```
+
+Repeat the above sampling several times to see that the sample population is different each time. You might try changing the mean and sd values to see how this affect the results or the sample size.
+
+
+*Simulating with Categorical data*
+
+Take a sample of 20 individuals from a population where 40% of individuals are diseased..note since these are proportions/binomial data we use slightly different code from above. We use the `sample` function becase each observation we sample an individuals that is either healthy or diseased.
+
+```{r}
+sample(c("diseased","healthy"), size=20, replace=TRUE, prob=c(.4,.6))
+```
+
+
+*Two Categories/treatments from a normal distribution*
+
+create a data frame with data from 20 individuals in two treatment groups (10 in each group). Keeping the mean response is the same between treatments.  Here we use rep to generate our treatment levels and then rnorm to generate our samples and then data.frame to bind them together into a single data object.  
+
+```{r}
+treatment <- rep(c("treat","control"), c(10,10))
+response <- rnorm(20, mean = 10, sd = 3)
+x <- data.frame(treatment, response, stringsAsFactors = FALSE)
+```
+
+
+You can modify the above procedure so that the mean is different between treatment and control groups, but the standard deviation remains the same (the usual assumption of most linear models).
+
+```{r}
+treatment <- rep(c("treat","control"), c(10,10))
+response1 <- rnorm(10, mean = 10, sd = 3)
+response2 <- rnorm(10, mean = 8,sd = 3)
+x <- data.frame(treatment, response = c(response1, response2),stringsAsFactors = FALSE)
+
+```
+
+*Two treatments, with a categorical response variable*
+
+Generate a data frame with categorical data from 20 individuals in two treatment groups (10 in each group). The response variable is “dead” or “alive” and the proportion alive is the same, 0.3, between treatments.
+
+```{r}
+treatment <- rep(c("treat","control"), c(10,10))
+survival <- sample(c("alive","dead"), size = 20, replace = TRUE, prob = c(.3,.7))
+x <- data.frame(treatment, survival, stringsAsFactors = FALSE)
+table(x) # view the sampling results
+```
+
+
+Now you can modify the above procedure so that the probability of survival is different between treatment (0.6) and control (0.3) groups.
+
+```{r}
+
+treatment <- rep(c("treat","control"), c(10,10))
+s1 <- sample(c("alive","dead"), 10, replace = TRUE, prob = c(.6,.4))
+s2 <- sample(c("alive","dead"), 10, replace = TRUE, prob = c(.3,.7))
+x <- data.frame(treatment, survival = c(s1,s2), stringsAsFactors = FALSE)
+table(x) # view the sampling results
+```
+
+**Challenge Questions**
+Now using what you learned above about randomly sampling/simulatingcategorical data from a population. Try the following challenge problems.
+
+
+1. Randomly sample 20 observations from a population having two groups of individuals, “infected” and “uninfected”, in equal proportions. Put the data together into a single data object (e.g. a data frame), and summarize the results in a frequency table.
+
+
+2. Sample 30 observations from a normally-distributed population having mean 0 and standard deviation 2. Plot the results in a histogram.
+    
+3. Repeat the following 10 times and calculate the mean each time: sample 30 observations from a normally-distributed population having mean 0 and standard deviation 2. Create a data.frame containing the output from the 10 simulations and generate a single plot demonstrating the mean and st.dev of each of 10 samples.
+
