@@ -1,0 +1,207 @@
+---
+title: "Comparing Means"
+author: "M.W.McCoy - modifed from Whitlock and Schluter"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(car)
+```
+
+Use the Titanic data for these examples, so load these data into R
+```{r}
+# I did not give you the import code to make you practice
+```
+Its always good practice to visualize your data before you start an analysis.  This just allows you to make sure the experimental design and data appear as you expect them too.  For example, to make sure things are being read as continuous versus categorical or not.
+
+I often use different approaches for different problems but will show a couple here.
+
+**Strip charts**
+A strip chart is a graphical technique to show the values of a numerical variable for all individuals according to their groups in a reasonably concise graph. Each individual is represented by a dot. To prevent nearby data points FROM obscuring each other, typically a strip chart adds “jitter”. That is, a little random variation is added to nudge each point to one side or the other to make it individually more visible.
+
+`geom_jitter()`
+
+In R, one can make strip charts with ggplot() using the geom function geom_jitter(). In the command below, we specify x = survive to indicate the categorical (group) variable and y = age to specify the numerical variable. If we want more or less jitter, we could use a larger or smaller value than 0.05 in the option `position_jitter(0.05)`.
+
+
+```{r}
+ggplot(titanicData, aes(x = survive, y = age)) + geom_jitter(position = position_jitter(0.05)) + theme_minimal()
+```
+
+The strip chart indicates a weak tendency for survivors to be younger on average than non-survivors (i.e. younger people had a higher chance of surviving the Titanic disaster than older people - maybe we should rename covid 19 the titanic flu).
+
+**Multiple histograms**
+
+Multiple histogram plots visualize the frequency distribution numerical variables separately for each of two or more groups. Allows easy comparison of the location and spread of the variable in the different groups, and it helps to assess whether the assumptions of relevant statistical methods are met.
+
+```{r}
+ggplot(titanicData, aes(x = age)) +   
+    geom_histogram() + 
+    facet_wrap(~ survive, ncol = 1) #makes 1 panel for each variable, ncol=1 makes them above and below
+ggplot(titanicData, aes(x = age)) +   
+    geom_histogram() + 
+    facet_wrap(~ survive, ncol = 2) #makes 1 panel for each variable, ncol=2 makes them left and right
+```
+Note the numerical variable is entered as the variable on the x axis (x = age). No y variable is specified because that is simply the count of individuals that have that age. The categorical variable is specified in the facet_wrap() function (~ survive).
+
+**Violin plots**
+
+Another good way to visualize the relationship between a group variable and a numerical variable is a violin plot. These provide similar information as boxplots except you can see the density of points rather than quartiles.
+
+```{r}
+ggplot(titanicData, aes(x=survive, y=age, fill = survive)) + 
+  geom_violin() +
+  xlab("Survival") + ylab("Age") + 
+  theme_classic()+scale_fill_manual(values=c("#FFB531","#BC211A"))+ 
+  stat_summary(fun.y=mean,  geom="point", color="black")+ 
+  theme(legend.position="none")+ 
+  theme(aspect.ratio=1)
+```
+
+**Box plots**
+```{r}
+ggplot(titanicData, aes(x=survive, y=age, fill = survive)) + 
+  geom_boxplot(alpha=.5) + 
+  xlab("Survival") + ylab("Age") + 
+  theme_classic()+scale_fill_manual(values=c("#FFB531","#BC211A"))+ 
+  theme(legend.position="none")+ 
+  theme(aspect.ratio=1)
+
+```
+
+**Combination displays**
+
+You can also overlay differnt styles of plots for even more information
+```{r}
+ggplot(titanicData, aes(x=survive, y=age, fill = survive)) + 
+  geom_jitter(position = position_jitter(0.05)) +geom_boxplot(alpha=.5) + 
+  xlab("Survival") + ylab("Age") + 
+  theme_classic()+scale_fill_manual(values=c("#FFB531","#BC211A"))+ 
+  theme(legend.position="none")+ 
+  theme(aspect.ratio=1)
+ggplot(titanicData, aes(x=survive, y=age, fill = survive)) + 
+  geom_jitter(position = position_jitter(0.05)) +geom_violin(alpha=.5) + 
+  xlab("Survival") + ylab("Age") + 
+  theme_classic()+scale_fill_manual(values=c("#FFB531","#BC211A"))+ 
+  theme(legend.position="none")+ 
+  theme(aspect.ratio=1)
+```
+**Two-sample t-test**
+
+The two-sample t-test is used to compare the means of two groups. This test can be performed in R using the function `t.test()`. 
+
+`t.test()` actually performs a wide array of related calculations.
+
+We will assume here that you have your data in the “long” format; that is, each row describes a different individual and columns correspond to variables. For a 2-sample t-test, two variables are used, one categorical and one numerical. So we assume that there is a column in the data frame indicating which group an individual belongs to, and another column that contains the measurements for the numerical variable of interest.
+
+The t.test() function uses a “formula” as one of its arguments. In a formula, the response variable is given first, followed by a tilde (~), followed by the explanatory variables. 
+
+With a t-test, the explanatory variable is the categorical variable defining the two groups and the response variable is the numerical variable.
+
+For example, to test whether the individuals which survived the Titanic disaster had the same average age as those passengers who did not survive--the formula is “age ~ survive”.
+
+To do a 2-sample t-test, t.test() also needs two other pieces of input. You need to specify which data frame contains the data, and you need to specify that you want to assume that the variances of the two groups are equal. 
+
+To specify the data frame to use, we give a value for the argument “data”, such as “data = titanicData”. To tell R to assume that the variances are equal, we use the option “var.equal = TRUE”.
+
+```{r}
+t.test(age ~ survive, data = titanicData, var.equal = TRUE)
+```
+**The output**
+Gives the test statistic `t`, the degrees of freedom for the test (df), and the P-value for the test of equal population means (which in this case is P = 0.044).
+
+Under “95 percent confidence interval,” this output gives the 95% confidence interval for the difference between the population means of the two groups. Finally, it gives the sample means for each group in the last line.
+
+**Welch’s t-test**
+
+The above 2-sample t-test assumes that both populations have the same variance for the numerical variable. However, the 2-sample t-test can have very high Type I error rates when the populations when this assumption is violated. 
+
+Welch’s t-test does not assume equal variance. 
+
+Calculating Welch’s t-test in R uses the same function t.test(), but with the option var.equal set to FALSE.
+```{r}
+t.test(age ~ survive, data = titanicData, var.equal = FALSE)
+```
+The output is the same as the 2-sample t-test above, except that the first line of the output tells us that R did a Welch’s t-test. Welch’s t-test (with var.equal = FALSE) is actually the default for t.test(). 
+
+**Paired t-test**
+
+The function t.test() can also perform paired t-tests. A paired t-test is used when each data point in one group is paired meaningfully with a data point in the other group.
+
+For this example we will use the blackbird data set. These data show the log antibody production of male blackbirds before (logBeforeImplant) and after (logAfterImplant) the birds received a testosterone implant. There is a before and after measure for each bird, so the data are paired meaningfully.
+
+Please load the data now.
+
+
+```{r}
+# code not provided for practice
+
+```
+The paired t-test is the same as above except you also have to specify the option `paired = TRUE`
+
+```{r}
+t.test(blackbird$logAfterImplant, blackbird$logBeforeImplant, paired = TRUE)
+```
+The output is again the same except for the first line. The output also gives the 95% confidence interval for the mean of the difference between groups. (It will calculate the difference by subtracting the variable you listed second from the variable you listed first: here that is logAfterImplant – logBeforeImplant.) 
+
+
+**Comparing more than 2 means**
+
+For this exercise we will be again working with the titanic data. 
+
+**Challenge**
+Using one of the techniques you learned in the t-test tutorial, draw a figure to visualize age~passenger_class in the titanic data.
+
+```{r}
+#Make plot here
+
+```
+
+We can also make a table of means and st. devs. using dplyr.
+
+
+```{r}
+titanicData %>% group_by(passenger_class) %>% summarise( group_mean = mean(age, na.rm=TRUE), group_sd = sd(age, na.rm=TRUE))
+```
+
+**ANOVA**
+
+Analysis of variance (or ANOVA) takes at least two steps in R. 
+  1. You fit the ANOVA model to the data using the function lm() (just like you did with regression since they are all linear models). 
+  
+  2. You have to use the results of first step to do the ANOVA calculations and place them in an ANOVA table using the function anova(). 
+  
+The function `lm()` needs a formula and a data frame as arguments. The formula always takes the form of a response variable, followed by a tilde(~), and then at least one explanatory variable. `numerical_variable ~ categorical_variable`. 
+
+The name of the data frame containing the variables stated in the formula is the second argument of lm(). 
+
+To complete the lm() command, it is necessary to save the intermediate results by assigning them to a new object, which anova() can then use to make the ANOVA table. 
+
+For example, here we assign the results of lm() to a new object named “titanicANOVA”:
+
+`titanicANOVA <- lm(age ~ passenger_class, data = titanicData)`
+
+
+The function `anova()` takes the results of lm() as input and returns an ANOVA table as output.
+```{r}
+titanicANOVA <- lm(age ~ passenger_class, data = titanicData)
+anova(titanicANOVA)
+```
+
+The anova table shows the results of a test of the null hypothesis that the mean ages are the same among the three groups. The P-value is very small, and so we reject the null hypothesis of no differences in mean age among the passenger classes.
+
+**Tukey-Kramer post hoc test**
+
+A single-factor ANOVA can tell us that at least one group has a different mean from another group, but it does not inform us which group means are different from which other group means. A Tukey-Kramer test lets us test the null hypothesis of no difference between the population means for all pairs of groups. The Tukey-Kramer test (also known as a Tukey Honest Significance Test, or Tukey HSD), is implemented in R in the function TukeyHSD().
+
+We will use the results of an ANOVA done with lm() as above, that we stored in the variable titanicANOVA. To do a Tukey-Kramer test on these data, we need to first apply the function `aov()`. The function `aov()` is similar to `lm()` . However, it keeps track of different peices of information generated during the model fitting that are needed for the Tukey test. The main difference from `lm()` is in the way print, summary and so on handle the information from a fit made by `aov()`: aov(0) model fits are expressed in the traditional language of the analysis of variance rather than that of linear models .The details about the differences are not too important beyond that. 
+```{r}
+titanicANOVA
+aov(age ~ passenger_class, data = titanicData)
+aov(titanicANOVA)
+TukeyHSD(aov(titanicANOVA))
+```
+The key part of this output is the table at the bottom. It estimates the difference between the means of groups (for example, the 2nd passenger class compared to the 1st passenger class) and calculates a 95% confidence interval for the difference between the corresponding population means. (“lwr” and “upr” correspond to the lower and upper bounds of that confidence interval for the difference in means.) Finally, it give the P-value from a test of the null hypothesis of no difference between the means (the column headed with “p adj”). In the case of the Titanic data, P is less than 0.05 in all pairs, and we therefore reject every null hypothesis. We conclude that the population mean ages of all passenger classes are significantly different from each other.
+
+
