@@ -1,0 +1,364 @@
+---
+title: "More Linear Modeling"
+output: html_notebook
+---
+
+Today we will combine some of the skills we have learned previously to learn in more depth how to work wiht linear models.  THis is important becuase these tools and concepts will apply in concept and in many cases in coding as well throughout the rest of the models we will learn about in this course. 
+
+**Simulating data**
+
+One of the most useful aspects of doing statistics in a programming environment, like R, is that you can easily write functions and simulate data structures that mimic your target data sets.  THis allows you to test the accuracy of your statistical approach.  Since you specify the deterministic functions, and error structures on the data, you know the truth, which allows you to evaluate how well your statistics are capturing that truth.
+
+Here we will write a function to simulate data for a linear regression.  We will use the very useful function `expand.grid' to help us create our design matrix. This function allows you to create a data frame from all combinations of the supplied vectors or factors. For example lets say we want to simulate a fully crossed factorial experiment (i.e. all combinations of all levels of two different kinds of treatments).
+
+```{r}
+trt1=5 #5 levels of treatment 1
+trt2=5 #5 levels of treatment 2
+
+d<-expand.grid(trt_1=factor(seq(trt1)),trt_2=factor(seq(trt2)))
+d
+```
+Above I've created numeric treatment lables but as factors.  Use str() to see for yourself. But you could easily use characters too.
+
+```{r}
+d<-expand.grid(trt_1=factor(letters[seq(trt1)]),trt_2=factor(letters[seq(trt2)]))
+d
+```
+
+Now we are ready to write our simulation function.  First we need to specify the parameters (means and std. deviations) that we want our groups to be sampled from.
+```{r}
+sd1=1
+sd2=1.2
+mu1<-rnorm(trt1,sd=sd1) 
+
+simfun=function(n_levels_1,n_levels_2,sd1,sd2){
+  d<-expand.grid(trt_1=factor(letters[seq(trt1)]),trt_2=factor(seq(trt2)))
+  u1<-rnorm(n_levels_1,sd=sd1)
+  d$y<-rnorm(n_levels_1*n_levels_2,mean=u1,sd=sd2)
+d
+}
+data=simfun(trt1,trt2,sd1,sd2)
+data
+```
+
+*Challenge*
+Duplicate the above simulation function, except make one of the two treatments a continous variable rather than a factor while retaining the other as a factor with 2 levels.  Give your function and the dataset created a different name from the names above.
+
+```{r}
+
+```
+
+
+Now fit and apply object names to two linear models: one for each of the two data sets you just created. Start by fitting the most complex models (all factors and all combinations). e.g. mod1<-lm(y~factor1*factor2,data=mydata)
+
+```{r}
+
+```
+
+
+Now simulate a data set that has one continuous and one categorical variable.
+```{r}
+
+```
+
+*End CHallenge*
+
+
+**EXTRACTING THE RESULTS AND DIAGNOSTICS**
+After fitting your models, there are a variety of useful functions to extract variaous aspects of the model fitting results from the lm object. Try them on your lms from above.
+
+```{r}
+summary(mod1)     # parameter estimates and overall model fit
+plot(mod1)        # plots of residuals, normal quantiles, leverage
+coef(mod1)        # model coefficients (means, slopes, intercepts)
+confint(mod1)     # confidence intervals for parameters
+resid(mod1)       # residuals
+predict(mod1)     # predicted values
+```
+
+
+**Parsing out different versions of the linear model and H0 testing**
+
+The simplest linear model fits a constant (i.e a single intercept).  
+
+`z <- lm(y ~ 1, data = mydata)`
+
+This is often called the null model and provides an estimate of the overall mean, standard error and confidence interval. The pvalue associated with this model tests the null hypothesis that the mean is zero. Run this model on both your data sets from above.
+
+```{r}
+
+```
+
+
+When you have a continuous variable, making y a function of that variable is the standard regression that we have discussed in detail.
+
+`z <- lm(y ~ x, data = mydata)`
+
+Run a regression on your simulated data.
+```{r}
+
+```
+
+
+When your variable is categorical rather than continuous, then the analysis is a 1 facotr anova (compares among levels of the factor)
+
+`z <- lm(y ~ A, data = mydata)`
+
+Try this on one of your data sets.
+
+```{r}
+
+```
+
+The models become increasingly more complex as you add additional variables.  
+
+z1 <- lm(y ~ x1 + x2, data = mydata)         # no interaction between x1 and x2
+z2 <- lm(y ~ x1 + x2 + x1:x2, data = mydata) # interaction term present
+z2 <- lm(y ~ x1 * x2, data = mydata)          # interaction term present
+
+Analysis of covariance models include both numeric and categorical variables. The linear model in this case is a separate linear regression for each group of the categorical variable. Interaction terms between these two types of variables, if included in the model, fit different linear regression slopes; otherwise the same slope is forced upon every group.
+
+`z <- lm(y ~ x + A + x:A, data = mydata)`
+
+Try this on your second data simulated data set.
+
+```{r}
+
+```
+
+**Challenge**
+Simulate a new data set with 1 continous and one 2-level categorical variable. Run 3 lm anlaysis one including just the intercept, one with 2 intercepts and one with two intercepts and two slopes...and plot the results of each using ggplot2. Here is some starter code for the figure
+
+`ggplot(mydata, aes(y = y, x = x)) +
+    geom_point(size = 2, col = "red") +
+    geom_smooth(method = "lm", se = FALSE) +
+    theme_classic()`
+
+```{r}
+
+```
+
+**End Challenge**
+
+The exercises below are modeled after an R intro workshop by Dolph Schluter
+
+**Simple linear regression**
+
+Using you simlated data perform these analyses...
+
+```{r}
+z <- lm(y ~ x, data = mydata) 
+```
+
+To obtain the regression coefficients (parameter estimates) with confidence intervals, as well as R^2 values,
+try
+```{r}
+
+summary(z)               # estimates of slope, intercept, SE's
+confint(z, level = 0.95) # 95% conf. intervals for slope and intercept
+```
+
+
+To test the null hypothesis of zero slope with the ANOVA table,
+
+```{r}
+anova(z)
+```
+
+
+Add 95% confidence bands to a scatter plot. 
+
+
+```{r}
+ggplot(x, aes(y = age, x = black)) +
+    geom_point(size = 2, col = "red") +
+    geom_smooth(method = "lm", se = TRUE) +
+    theme(aspect.ratio = 0.80) +
+    theme_classic()
+```
+
+
+You can use the following also to include 95% prediction intervals on your ggplot graph. Heed the warning from the predict command.
+
+```{r}
+x.p <- predict(z, interval = "prediction")
+x.p <- cbind.data.frame(x, x.p)
+ggplot(x.p, aes(y = age, x = black)) +
+    geom_point(size = 2, col = "red") +
+    geom_smooth(method = "lm", se = TRUE) +
+    geom_line(aes(y = lwr), color = "red", linetype = "dashed") +
+    geom_line(aes(y = upr), color = "red", linetype = "dashed") +
+    theme(aspect.ratio = 0.80) +
+    theme_classic()
+```
+
+
+Examine useful diagnostic plots for checking assumptions. Think about concepts discussed in lecture and write notes about each of these for yourself..
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(z)        # residual plots, etc: keep hitting enter
+hist(resid(z)) # histogram of residuals
+```
+
+
+**Fixed intercept or slope**
+
+Sometimes you may want to constrain parameter values for example in a simple linear regression. 
+
+```{r}
+# Ordinary linear regression, for comparison
+z <- lm(y ~ x, data = mydata)
+
+# Force the regression line through the origin
+z <- lm(y ~ x - 1, data = mydata)
+z <- lm(y ~ 0 + x, data = mydata)
+
+# Force a slope of 1 through the data
+z <- lm(y ~ 1 + offset(1*x), data = mydata)
+
+# Force a slope of "b" through the data (b must be a number)
+z <- lm(y ~ 1 + offset(b*x), data = mydata)  
+```
+
+
+Forcing the line through the origin (forcing an intercept of 0) results in only the slope being estimated. Forcing a slope of 1 or b through the data results in only the intercept being estimated. 
+
+
+**Single factor ANOVA**
+
+Before fitting a linear model to the data. As a general "best practices exercise" check that the categorical variable is a factor. If not, make it a factor, as this will help later when we fit the model.
+
+```{r}
+is.factor(mydata$A)          # or
+class(mydata$A)              # result should be "factor" if A is a factor
+mydata$A <- factor(mydata$A) # convert categorical variable A to a factor
+```
+
+
+Check how R has sorted the factor groups (levels). You will see that R orders them alphabetically, by default, which isn’t necessarily the most useful order.
+
+
+```{r}
+levels(mydata$A)
+```
+
+It is often useful to rearrange the order of groups so that any control group is first, followed by treatment groups. For example, if there were four groups, “a” to “d”, and group “c” is the control. WE may want to change the order like this (more explanation for the utility of this below)
+
+```{r}
+mydata$A <- factor(mydata$A, levels=c("c","a","b","d"))
+
+```
+
+
+Fit the linear model to the data. y is the numeric response variable and A is the categorical explanatory variable (character or factor).
+
+
+```{r}
+z <- lm(y ~ A, data = mydata)
+```
+
+Visualize the fitted model in a graph that includes the data points. The second command below is a fast but crude way to add the fitted values to the plot.
+
+```{r}
+#library(devtools)
+#install_github("kassambara/easyGgplot2")
+library(easyGgplot2)
+ggplot2.stripchart(mydata, xName='treatment',yName='response',
+                   addMean=TRUE, meanPointShape=23, meanPointSize=4,
+                   meanPointColor="black", meanPointFill="blue", groupName='block', 
+                   legendPosition="top"
+                  )
+
+```
+
+
+
+**Check assumptions of single factor ANOVA**
+
+```{r}
+plot(z)        # residual plots, etc
+hist(resid(z)) # histogram of residuals
+```
+
+Estimate parameters. By default in R, the intercept term estimates the mean of the first group (set this to be the control group or the most convenience reference group which is why we reordered the factors above). Remaining parameters estimate the difference between the mean of each group and the first (control) group. 
+
+```{r}
+summary(z)               # coefficients table with estimates
+confint(z, level = 0.95) # conf. intervals for parameters
+```
+
+
+Test the null hypothesis of equal group means with the ANOVA table.
+
+```{r}
+anova(z)
+```
+
+
+See how R is representing the categorical variable behind the scenes by using indicator (dummy) variables. In other words visualize the design matrix.
+
+```{r}
+model.matrix(z)
+```
+
+
+
+**Fit multiple factors**
+
+When two or more categorical factors are fitted, the possibility of an interaction might also be evaluated. Remember that in R the order in which you enter the variables in the formula affects the anova results. By default, anova fits the variables sequentially (“type I sum of squares”), while at the same time respecting hierarchy. Some other statistics programs such as SAS and JMP use marginal fitting of terms instead (“type III sum of squares”) instead. 
+
+To read more about this go to google or for a breif account see here: https://cran.r-project.org/doc/FAQ/R-FAQ.html#Why-does-the-output-from-anova_0028_0029-depend-on-the-order-of-factors-in-the-model_003f
+
+
+In the case of two factors, A and B, the linear model is as follows.
+
+```{r}
+z <- lm(y ~ A + B, data = mydata) # additive model, no interaction fitted
+z <- lm(y ~ A * B, data = mydata) # main effects and interaction terms fitted
+summary(z)                        # coefficients table
+confint(z, level = 0.95)          # confidence intervals for parameters
+anova(z)                          # A is tested before B; interaction tested last
+```
+
+
+We can use the Anova command in the car package to give us the ANOVA table based on marginal fitting of terms (“type III sum of squares”). To accomplish this we first need to override R’s default coding of categorical variables, as follows.
+
+```{r}
+z <- lm(y ~ A * B, contrasts = c("contr.sum", "contr.poly"), data = mydata)
+library(car)
+Anova(z, type = 3)
+
+```
+
+**Fit a factor and a numeric covariate**
+
+Here, is an example of a linear model having a numeric response variable (y) and two explanatory variables, one categorical (A) and the other numeric (x). (Fitting a model with both numerical and categorical variables is also known as ancova, or analysis of covariance.) Note that the order of terms in your formula affects the sums of squares and anova tests. STo fit terms sequentially, use the following methods.
+
+```{r}
+z <- lm(y ~ x + A, data = mydata) # no interaction term included, or
+z <- lm(y ~ x * A, data = mydata) # interaction term present
+summary(z)                        # coefficients table
+confint(z, level = 0.95)          # confidence intervals for parameters
+anova(z)                          # sequential fitting of terms
+
+```
+
+Check model assumptions:
+
+```{r}
+plot(z)        # residual plots, etc
+hist(resid(z)) # histogram of residuals
+
+```
+
+Use Anova command in the car package to carry out marginal fitting of terms instead (“type III sum of squares”). First, we need to override R’s default contrasts.
+
+```{r}
+z <- lm(y ~ x * A, contrasts = c("contr.sum", "contr.poly"), data = mydata)
+library(car)
+Anova(z, type = 3)
+```
+
+
