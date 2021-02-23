@@ -1,0 +1,204 @@
+---
+title: "The Linear Model"
+output: html_notebook
+---
+
+
+
+
+```{r echo=FALSE}
+require(tidyverse)
+```
+
+In this class we will work with the statistical linear model.  Remember that in matrix form the statistical linear model can be written as 
+
+$$\textbf{Y = X \( \beta \)+e }$$
+
+Where **Y** is a vector containing the random variable, **X** is the design matrix and $\beta$ is a vector of parameters. Recall that $\beta$ is the thing that we need to solve for by choosing the set of parameters that minimizes **e** which is the vector of errors.
+
+To illustrate each of these elements and how we can solve for the OLS (and equivelantly MLE) estimate of $\beta$ we will work with a built in data set called r`women` which contains data on the average hieghts and weights of American Women.
+
+But first lets take a look at the data. 
+
+```{r}
+dat<-as_tibble(women)
+dat
+```
+So these data are presented in imperial units inches and pounds.
+
+**Challenge 1**
+Use the tools learned in previous sessions to transform these data into metric units.  
+
+```{r}
+dat=dat %>% transform(metric_height=height*2.54,metric_weight=weight*0.45392) 
+dat
+```
+
+Now using what you've learned about tibbles and data structures in R, create the response matrix and name it "Y" and the design matrix and name it "X" .
+
+```{r}
+## Create Y vector for this specific regression
+Y = as.matrix(women$weight)
+Y
+```
+
+```{r}
+##Create the design matrix - X - for this regression
+X = as.matrix(cbind(1,women$height))
+X
+```
+
+Okay, so now that we have the responses and design matrx we need to find the set of $\beta$ that minimizes the vector of errors **e**. 
+
+
+$$e_i=y_i-\hat{y}$$
+
+So...we want to minimize the OLS or maximize the ML by minimizing the following equation
+
+$$L=\sum_1^ne_i^2$$
+
+And so after a little calculus and a lot of algebra we can show that the set of $\hat{\beta}$ values that minimizes the sums of squared errors is solved by
+
+$$\hat{\beta} = (X'X)^{-1} X'Y)$$
+
+Before we can program that equation you need to know about a couple of matrix operations in R. These are not things that you will likely use commonly (unless you get into writing your own models)...but are useful here.
+
+Matrix operators in R
+    r`as.matrix()` coerces an object into the matrix class.
+    r`t()` transposes a matrix.
+    r`%*%` is the operator for matrix multiplication.
+    r`solve()` takes the inverse of a matrix. Note, the matrix must be invertible.
+
+```{r}
+## Choose beta-hat to minimize the sum of squared residuals
+beta_hat = round(solve( #solve calculates the inverse of X'X
+                t(X) %*% X)  #transpose of X times X
+                %*%t(X)%*%Y, #transpose of X times Y
+                digits=2) #round to 2 digits
+
+## results in matrix of estimated coefficients/parameters:
+beta_hat
+
+```
+
+**Challenge 2**
+
+a. Convert the matrix of coefficients into a data.frame or tibble with a column containing the names "Intercept" and "Slope"
+```{r}
+## Label and organize results into a data frame
+labs=c("Intercept","Slope")
+beta_hat = as_tibble(data.frame(labs,beta_hat))
+names(beta_hat) = c("Coeff.","Est")
+beta_hat
+```
+
+b. Calculate the residuals (error) from this model.  Hint - error is equal to
+
+$$e_i = (y_i -\hat{y})$$
+
+```{r}
+# Calculate vector of residuals
+intercept=as.numeric(beta_hat[1,2])
+slope=as.numeric(beta_hat[2,2])
+dat = dat %>% mutate(res=metric_weight-(intercept-slope*metric_height))
+```
+
+While we didnt go into detail in class on the solution for standard errors, we can derive an equation to determine the standard error from the matrices in a similar way as we did for the vector of coefficients. Specifically, we need to calculate the variance covariance matrix (VCV).
+
+A covariance refers to the measure of how two variables will change together. The variance refers to the spread of the data set — i.e. how far apart the numbers are in relation to the mean.
+
+To caluculate the VCV for the intercept and slope:
+
+$$Var(\hat{\beta}|X)=\frac{1}{n-1}\hat{\epsilon}'\hat{\epsilon}(X'X)^{-1}$$
+
+```{r}
+## Define n and k parameters
+n = nrow(dat)
+k = ncol(X)
+ 
+## Calculate Variance-Covariance Matrix
+res=dat$res
+VCV = 1/(n-k) * as.numeric(t(res)%*%res) * solve(t(X)%*%X)
+VCV
+## Standard errors of the estimated coefficients
+StdErr = sqrt(diag(VCV))
+StdErr
+```
+Now that we have estimate of the mean (intercept and slopes) and standard errors we can do a statistical null hypothesis test to determine if the coefficients are significantly different from a null of zero.
+
+
+```{r}
+## Calculate p-value for a t-test of coefficient significance
+P.Value = rbind(2*pt(abs(as.numeric(beta_hat[1,2])/StdErr[1]), df=n-k,lower.tail= FALSE), 2*pt(abs(as.numeric(beta_hat[2,2])/StdErr[2]), df=n-k,lower.tail= FALSE))
+
+## concatenate into a single data.frame
+beta_hat = cbind(beta_hat,StdErr,P.Value)
+beta_hat
+```
+
+**Challenge 3**
+
+Using what you have learned about plotting data using ggplot.  Recreate the figure below
+
+```{r}
+## Plot results
+plot(dat$height,dat$weight, xlab = "Height", ylab = "Weight",
+                main = "OLS: Height and Weight")
+abline(a = beta_hat[1,2], b = beta_hat[2,2], col = 'red', lwd = 2, lty="dashed")
+```
+```{r}
+ggplot(dat,aes(x=dat$height,y=dat$weight)) +
+    geom_point(stat="identity")+
+    stat_smooth(method="lm") +
+    xlab("weight")+
+    ylab("height")
+```
+
+Now we will analyse the same data except we will use the built in functions in R.  To run the linear regression using the automated procedures, we will call the function r`lm()`
+
+```{r}
+m1<-lm(weight~height,data=dat)
+m1
+```
+
+Do the answers match up?
+
+To see the statistical output, including standard errors in addition to the estimates use the function r`summary()`
+
+```{r}
+summary(m1)
+```
+
+To view the residuals from a linear model fit, you can use the function r`resdi()` and compare them to the residuals we calculated manually above.
+
+```{r}
+resid(m1)
+plot(resid(m1),res)
+```
+
+Okay...so we have calculated a linear regression manually and using R's built in functionality.  Now lets expolre the linear model in one last way.  Lets, simulate some data that we can then analyse using a linear regression.  I will simulate data for a single population mean. This should get your started for your task below...
+
+To simulate a mean:
+```{r}
+x_bar=10
+err=rnorm(100,0,.5)
+y=c(x_bar+err)
+hist(y,breaks=15)
+```
+
+**Challenge 4**
+Your task is to use this hint to simulate data for a linear relationship with normal errors and then run a regression analysis, plot the output in a figure using r`ggplot`. You will use the function r`rnorm()` to generate a random normal sample of legnth n.
+
+
+
+To generate these data you will want to:
+1. Specify the deterministic model
+2. Specify the error model
+3. generate a random variable from steps 1 and 2.  
+4. create a tibble
+5. analyse the data
+6. draw a picture.
+
+```{r}
+
+```

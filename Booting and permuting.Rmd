@@ -1,0 +1,216 @@
+---
+title: "Bootstrappiong and Permution analyses--adapted from Dolph Schluter"
+output: html_notebook
+---
+
+Bootstrap resampling
+
+The bootstrap is mainly used in estimation. The method uses resampling with replacement to generates an approximate sampling distribution of an estimate. 
+
+Standard errors and confidence intervals can be calculated using this bootstrap sampling distribution.
+
+
+**Resample data**
+Let’s assume that the data are a sample of measurements for a single variable stored in a vector x. The data may be numeric or categorical.
+
+Genreate a vector of data with 100 values of any type you want  call it x
+```{r}
+x<-
+```
+
+
+A single bootstrap replicate can be obtained as follows. 
+
+```{r}
+xboot <- sample(x, replace = TRUE)
+```
+
+The replace option in the above code is used to indicate that sampling is carried out with replacement.
+
+*Challenge*
+Describe what is different about x and xboot...
+
+Calculate the statistic of interest (for example, the mean) on the resampled data in xboot and store the result in a vector named `z` created for this purpose. Place the mean of the boot strapped sample in position 1 of the vector.
+
+```{r}
+z <- vector()        # initialize z (do only once)
+z[1] <- mean(xboot)  # first bootstrap replicate estimate
+```
+
+
+Repeat steps (1) and (2) many many times. The result will be a large collection of bootstrap replicate estimates for subsequent analysis.
+
+
+###Detour###
+**For loops** 
+The for loop is probably the easiest way to repeat a precedure in R over and over again.
+
+The following simple example repeats the same command 5 times. The element `i` is a counter that starts at 1 and increases by 1 each time the commands between the brackets “{ }” are executed.
+
+```{r}
+for(i in 1:5){
+  print("Back off, man, I'm a scientist")
+  }
+```
+
+###End Detour###
+
+**Challenge**
+Using what you learned in the detour can you repeat steps (1) and (2) many many times (say 1000 times). Plot the bootstrap replicate estimates in a histogram.
+
+```{r}
+
+```
+
+You can also bootstrap sample a bunch of variables that are measured on individuals (e.g., stem height, leaf area, petal diameter, etc). Assume that each row of a data frame mydata is a different individual, and each column a different variable.
+
+1. To resample individuals (i.e., rows) of a data set called mydata:
+
+```{r}
+iboot <- sample(1:nrow(mydata), replace = TRUE)
+    bootdata <- mydata[iboot,]
+
+```
+
+The data frame bootdata will contain a single bootstrap replicate including all the variables. Make sure you understand what that code is doing!!!
+
+**Challenge**
+Try generating a bootstrap sample of all variables in the built in data set "iris"
+
+```{r}
+data("iris")
+
+
+```
+
+    
+Now you can calculate the statistic of interest on the resampled data and store the result in vector created for this purpose. For example, to calculate the correlation between two variables x and y in bootdata,
+
+```{r}
+z <- vector()        # initialize z (do only once)
+z[1] <- cor(bootdata$x, bootdata$y) 
+```
+
+**Bootstrap standard error**
+
+Assume that the vector z contains a large number of bootstrap replicate estimates of a statistic of interest. The bootstrap standard error of the statistic is obtained as the standard deviation of the bootstrap replicate estimates. (The most common mistake at this stage is to calculate the standard error of the bootstrap replicates rather than the standard deviation.) This is because you have a distribution of means and standard error is also called the mean standard deviation which is not the same as sample standard deviation. Go back to the your notes about the relationship of se and sample std. deviation if you are unclear about this. 
+
+```{r}
+sd(z)
+```
+
+
+
+**Confidence interval approximation using the percentile method**
+
+The percentile method is often used to provide an approximate 95% confidence interval for the population parameter a bootstrapped distribution. 
+
+The vector z contains a large number of bootstrap replicate estimates of the statistic of interest. A large number of bootstrap replicate estimates is required for an accurate confidence interval. By the percentile method, a 95% boostrap confidence interval for the parameter is obtained as
+
+```{r}
+quantile(z, probs = c(0.025,0.975))
+```
+
+**Using the boot package**
+
+The boot library, included with the standard R installation, includes useful commands for bootstrapping. Notably, it will calculate confidence intervals using the BCa method, which is more accurate than those produced by the percentile method. BCa stands for “bias corrected and accelerated”. The method corrects for estimated bias and skewness. Consult Efron and Tibshirani (1998) for details.
+
+To begin, load the boot library
+
+
+```{r}
+library(boot)
+```
+
+To use the boot package you will need to write a function to calculate the statistic of interest. The format is illustrated below for the sample mean. We’ll call our function “boot.mean”. 
+
+
+```{r}
+boot.mean <- function(x,i){boot.mean <- mean(x[i])}
+```
+So just like a built in function when you write your own functions in r there are arguments that must be specified to operate thef function.  These are dictated in the parentheses after the "function" operator.  For instance here, `x` refers to the vector of data and `i` serves as a counter, as in your own for loop, but it must be included as an argument in your function as shown.
+
+The command 'boot' will automatically carry out all the resampling and computations required. For this example, x is the vector of original data and boot.mean is the name of the function we created above to calculate the statistic of interest. The argument "R" specifies the number of bootstrap replicate estimates desired.
+
+```{r}
+z <- boot(x, boot.mean, R = 2000)
+```
+
+
+The resulting object (which here named z) is a boot object containing all the results. Use the following additional commands to pull out the results.
+
+```{r}
+print(z)                  # Bootstrap calculation of bias and SE
+sd(z$t)                   # Another way to get the standard error
+
+hist(z$t)                 # Histogram of boostrap replicate estimates
+qqnorm(z$t)               # Normal quantiles of replicate estimates
+
+boot.ci(z, type = "bca")  # 95% confidence interval using BCa
+boot.ci(z, type = "perc") # Same using percentile method
+```
+
+
+Permutation test
+
+A permutation test uses resampling and the computer to generate a null distribution for a test statistic. The test statistic is a measure of association between two variables or difference between groups, such as a slope, a correlation, or an odds ratio. 
+
+Each permutation step involves randomly resampling without replacement the values of one of the two variables in the data and recalculating the test statistic in each permutation. The two variables may be categorical (character or factor), numeric, or one of each.
+
+If one or more variables is numeric, then you will need to create a short loop to carry out the resampling necessary for the permutation test. 
+
+Choose one of two variables to resample (call it x). It doesn’t matter which of the two variables you choose. Keep the other variable (call it y) unchanged (there is no benefit to resampling both variables).
+
+Do this on two columns of data of your choosing in the iris data set. 
+
+Resample x without replacement to create a new vector (call it x1).
+
+  
+```{r}
+x1 <- sample(x, replace = FALSE)
+```
+
+Calculate the test statistic to measure association between y and the randomized variable x1. Store the result in a vector created for this purpose. For example, to calculate the correlation between the two variables,
+
+```{r}
+  z <- vector()        # initialize z (do only once)
+  z[1] <- cor(x1, y)   # first permutation result
+
+```
+  
+**Challenge**
+Repeat the steps above many times. The result should be be a large collection of replicates representing the null distribution of your test statistic (in this case the correlation coeficcient).
+
+```{r}
+
+```
+
+**Extra Challenge with Real Data**
+
+Caribbean bird immigration
+
+Birds of the Caribbean islands of the Lesser Antilles are descended from rare immigrants from larger islands and the nearby mainland. The data here are the approximate dates of immigration, in millions of years, of each of 37 bird species now present on the Lesser Antilles (Ricklefs and Bermingham 2001, Science 294: 1522-1524). The dates were calculated from the difference in mitochondrial DNA sequences between each of the species and its closest living relative on larger islands or the mainland. 
+
+Perform the following using this data set:
+
+1. Determine the shape of the frequency distribution of estimated immigration dates? Use a ggplot to display it.
+
+2. What are the mean and median dates of immigration, in millions of years? Why are the two values so different?
+
+3. Obtain a single bootstrap replicate of the immigration dates and plot the results. How different is the frequency distribution of the bootstrap sample from that of the data?
+
+4. Write a short loop to generate 10000 bootstrap replicate estimates for the sample median immigration date. Store the resulting medians in a vector.
+    
+5. Plot the frequency distribution of your results from (4). What does this frequency distribution estimate?
+
+6. Using your results in (4) to calculate a standard error for the sample median*.
+
+Most of the familiar estimators of population parameters, such as sample mean and variance, are unbiased, which means that the mean of its sampling distribution equals the parameter value being estimated. For example, the mean of the sampling distribution of the sample mean is $, the very parameter being estimated. The sample mean is an unbiased estimator. However, some estimators are biased, and the bootstrap is often used to estimate bias. Is the median of immigration dates biased? 
+
+7. Calculate the mean of the bootstrap replicate estimates of the median immigration date to estimate the bias.
+
+8. Use the percentile method to generate an approximate 95% confidence interval for the population median.
+
+9. Apply the boot package to generate a more accurate boostrap confidence interval for the median using the BCa method.
+
+Have fun!
