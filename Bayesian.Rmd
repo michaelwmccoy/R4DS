@@ -1,0 +1,152 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+In this tutorial I will use a simple example of a binomial coin toss to demontrate the Bayesian framework for estimating parameters of a model. 
+
+Recall that the binomial distribution can be represented as:
+
+binomial(n, p)
+
+where `n` is the number of coin tosses and the parameter `p` is the probability that a given coin toss lands on heads. We can use the outcome from a given number of coin tosses (i.e. the number of heads `h`), to compute the the paramter `p` which tells us the probability of getting a heads from a single coing toss using a bayesian framework.
+
+Bayes’ theorem tells us that the probability of a specific value of p given the number of heads h  (Pr(p|h) is:
+
+$$Pr(p|h)=\frac{Pr(h|p)*Pr(p)}{Pr(h)}$$
+where Pr(h|p) in the numerator is the likelihood of the data given a specific value of p, Pr(p) is the prior probability for p and Pr(h) in the denominator is the marginal likelihood (sum of all pssible outcomes) for the observed number of heads. The prior probability of our parameter represents our understaing or expectation of the value of p given other data or expereinces. For instance, If we think our parameter can any value with the same probability, we can use a uniform (flat) prior, but if we think we have a fair coin then our prior can take on the value of 0.5.
+
+Now we can use a Markov Chain Monte Carlo (MCMC) simulation to explore many different values of p- and then calculate the posterior probability of of those values. There are many different versions of MCMC algorithims. In this example, we will use a simplified version of the Metropolis-Hastings MCMC algorithm.
+
+– Step 1) Set an initial value for p. We will choose that value from a random uniform distribtuion (`runif()`) between 0 and 1.
+
+```{r}
+p <- runif(1, 0, 1)  
+```
+
+- Step 2) Propose a new value of p, called p'.
+
+```{r}
+ p_prime <- p + runif(1, -0.05, 0.05) 
+```
+ 
+- Step 3) Compute the `acceptance criteria of this new value for the parameter.In otehr words does the new value provide a better or worse fit to the data? To do this we will evaluate whether the  new value improves the posterior probability given our data. The posterior probability can be conceptualized as the ratio of the probability of the new value of the parameter to the previous value Pr(p'|h) / Pr(p|h). If this ratio is >1 then the new value p' has more support than the old value p.
+
+$$R_{min}[1,\frac{\frac{Pr(h|p')*Pr(p')}{Pr(h)}}{\frac{Pr(h|p)*Pr(p)}{Pr(h)}}]=[1,\frac{Pr(h|p')*Pr(p')}{Pr(h|p)*Pr(p)}]$$
+
+The advantage of this method is that we avoid needing to compute the marginal likelihood (denominator of the Bayes' Theorm), which can be extremely difficult for more complex models. 
+
+**What do these equations actually compute?**
+
+Since our main model is a binomial model (coin toss), the likelihood function, Pr(h|p), can be solved and computed analytically  in R language: 
+
+```{r}
+ # help(dbinom)  
+ likelihood <- function(h, n, p){  
+  lh <- dbinom(h, n, p)  
+  lh  
+ }  
+```
+Pr(p) is our prior probability.  Since we are working with a binomial outcome we know that  that it take on a value between 0 and 1. If we think that all values have the same probability, we can define a flat prior using the betadistribution (dont worry about this right now we will cover it in the next lecture). A beta distribution with parameters β(1,1) is a uniform or flat distribution that is bounded between 0 and 1. In `R` we can obtain the Pr(p) under a uniform prior of β(1,1) as:
+
+```{r}
+# help(dbeta)  
+ dbeta(p, 1, 1)  
+```
+Now, define the acceptance probability (equations in Step 3) by taking the minimum value: 1 or the ratio of posterior probabilities given p'. 
+
+```{r}
+R <- likelihood(h,n,p_prime)/likelihood(h,n,p) * (dbeta(p_prime,1,1)/dbeta(p,1,1)) 
+```
+**Back to the MCMC**
+Step 4) Generate a uniform random number between 0 and 1. If this number is < R (defined in previous chunk), we will accept the new value for p (p') and we update the value of p = p'. If not, the change is rejected. This step introudcues randomeness in the exploration of parameter space.
+
+```{r}
+if (R > 1) {R <- 1}  
+   random <- runif (1, 0, 1)  
+  if (random < R) {  
+   p <- p_prime  
+  }  
+```
+
+- Step 5) Record the current value of p.
+
+```{r}
+posterior[i,1] <- log(likelihood(h, n, p))  
+posterior[i,2] <- p  
+```
+ 
+
+Finally, repeat this loop many many times to obtain a good estimate of p. This can be easily done in R using a forloop .
+ 
+ For this example we will toss a coin 100 times, and we obtain 65 heads. Is the coin biased? 
+
+*All steps above repeated here*
+```{r}
+# Set the numer of tosses.  
+ n <- 100
+ # Set the number of heads obtained.  
+ h <- 65  
+ # Define our likelihood function.   
+ # Since our model is a binomial model, we can use:  
+ likelihood <- function(h,n,p){  
+  lh <- dbinom(h,n,p)  
+  lh  
+ }  
+ # Set the starting value of p  
+ p <- runif(1,0,1)  
+ # Create an empty data.frame to store the accepted p values for each iteration.  
+ # Remember: "the posterior probability is just an updated version of the prior"  
+ posterior <- data.frame()  
+ # Set the length of the loop (Marcov Chain, number of iterations).  
+ nrep <- 5000  
+ # Start the loop (MCMC)  
+ for (i in 1:nrep) {  
+  # Obtain a new proposal value for p  
+  p_prime <- p + runif(1, -0.05,0.05)  
+  # Avoid values out of the range 0 - 1  
+  if (p_prime < 0) {p_prime <- abs(p_prime)}  
+  if (p_prime > 1) {p_prime <- 2 - p_prime}  
+  # Compute the acceptance proability using our likelihood function and the  
+  # beta(1,1) distribution as our prior probability.  
+  R <- likelihood(h,n,p_prime)/likelihood(h,n,p) * (dbeta(p_prime,1,1)/dbeta(p,1,1))  
+  # Accept or reject the new value of p  
+  if (R > 1) {R <- 1}  
+   random <- runif (1,0,1)  
+  if (random < R) {  
+   p <- p_prime  
+  }  
+  # Store the likelihood of the accepted p and its value  in a new data frame
+  posterior[i,1] <- log(likelihood(h, n, p))  
+  posterior[i,2] <- p  
+  print(i)  
+ }  
+```
+ 
+
+Now plot the results. We often use what is called a trace plot to explore the Markov Chains
+
+
+```{r}
+
+data=data.frame(index=1:5000, prior = rbeta(5000, 1,1), posterior=posterior$V2)  
+p1=ggplot(data ,aes(x=index,y=posterior) )+ xlab ("generations")+ ylab ("p")+ggtitle("trace of MCMC\n accepted values of parameter p\n prior = beta(1,1) generations = 5000")+geom_line()+geom_hline(yintercept=mean(data$posterior,na.rm=TRUE),color="red")  
+p1 
+p2=ggplot(data,aes(x=posterior))+geom_density()+geom_density(aes(x=prior),color="dodgerblue")+ggtitle("prior VS posterior\n prior= beta(1,1)") +geom_vline(xintercept = mean(data$posterior),color="red") 
+p2
+grid.arrange(p1,p2,nrow=1)
+prob=mean(data$posterior)
+prob
+```
+ 
+
+
+What do we find and conclude?  The probability of getting a head from a coin toss given our data is around 0.7.
+
+ 
+
+
+
+
+
+
