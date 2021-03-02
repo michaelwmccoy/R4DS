@@ -1,0 +1,238 @@
+---
+title: "Example of a Binomial GLM"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+The structure of the cells in a honeycomb have been proposed to serve as a way of controling parasitic infestations by the mite *Varoa destructor* which can have serious affects on honeybee larvae.  In a paper by Maggi et al. 2010, honeycomb cells of worker broods were examined to determine whether cell size related to prevelance of the mites.  Here we will model the presence or absence of parasies as a function of cell size.
+```{r}
+Bee <- read_csv(file = "~/Dropbox/Teaching/R for Data Science/GLMGLMM_AllData/workerbees.csv")
+str(Bee)
+```
+To illustrate a GLM on binary data we will convert these data (number of parasites) into a binary data set of presence absence data.
+```{r}
+Bee$Parasites[Bee$Parasites>0] <-1
+```
+
+
+Now the data consists of two columns one with presence absence data in the form of 0 and 1, and a comlumn containing cell size information.  We can visualize the data using the `table()` function to see the numbers of 1 and 0's and and by plottig it to see how these change with cell size.
+
+```{r}
+table(Bee$Parasites)
+
+#Plot the data and add a linear regression line
+
+ggplot(data=Bee,aes(x = CellSize,y = Parasites))+
+     xlab("Cell size")+
+     ylab("Absence or presence of parasites")+
+     geom_point()+
+     geom_smooth(method="lm",alpha=0)+
+     scale_y_continuous(limits = c(0, 1))
+     
+
+ggplot(data=Bee,aes(x = factor(Parasites),y=CellSize))+
+     xlab("Cell size")+
+     ylab("Absence or presence of parasites")+
+     geom_boxplot()
+
+```
+
+Okay, so now lets discuss how to implement a binomial GLM.  The steps are the same as for all GLMs.
+
+1. Specify the error distribution
+2. Define a linear predictor function including relevant covariates
+3. Specify the link function
+
+**Step 1 - The error distribution**
+Since we have binary data we can assume a binomial distribution...or more precisely since we only have 0 or 1 data we will assume a Bernoulli distribution. Thus we can define the mean and variance of our response, $Y_i$ as
+$$E(Y_i)=\pi_i\quad \textrm{and} \quad var(Y_i)=\pi_i\times(1-\pi_i)$$
+
+**Step 2 - The predictor function**
+$$\eta_i=\beta_0+\beta_1\times CellSize_i$$
+
+**Step 3 - The link**
+For the Bernoulli distribution is the logit link.  Lets explore for a moment what the logit link is...
+
+We know that our fitted probabilities cannot have realizations smaller than zero or larger than 1.  In other words $\pi_i$ is bound by a low value of 0 and a high value of 1.  The fitted values that we can obtain from the linear predictor function $\eta_i$ and the identity link function ignore these bounds and will generate fitted values outside these bounds.  The logit solves this.  To understand the logit lets start by thinking about odds. 
+$$O_i=\frac{\pi_i}{1-\pi_i}$$
+What are odds?  Well odds give us the same information as probability but on a different scale.  While probability tells us how likely a value is to be a 0 or a 1, the odds tells us how frequently we can expect a given out come.  For example, in gambling one might say the odds of a particular horse wining a race is 9 to 1, which actually means that if we could replicate the race 10 times that particualr horse will when in 9 of them.  In probability terms, the probability the horse will win is 0.9. 
+
+So why are we talking about odds then? Well unlike probabilities which have an upper bound of 1, odds do not have an upper bound. 
+```{r}
+pi_i=seq(0.1,0.9, by=0.1)
+one_pi=1-pi_i
+O_i=pi_i/(one_pi)
+pi_i
+one_pi
+O_i
+```
+So that takes care of the upper bound but we still have a lower bound at zero.  The solution to that problem is relatively simple, we just need to take the natural log of the odds--also called the log odds.  
+```{r}
+ln_O_i=log(O_i)
+ln_O_i
+
+```
+
+Now we can see that we have removed both the lower and upper bounds!
+
+Now we just need to rewrite the log odds to present as the logit link 
+$$log(O_i)=\eta_i=\beta_0+\beta_1\times CellSize_i$$
+and so the notation $logit(\pi_i) =\eta_i$ stands for the 
+$$\pi_i=\frac{e^{\eta_i}}{(1+e^{\eta_i})}\quad \textrm{where} \quad \eta_i=\beta_0+\beta_1\times CellSize_i$$
+Now lets analyse the Bee data.  We will use the same form of the glm as with the Poisson regression except in this case we will change the famiy to binomial
+
+```{r}
+m1 <- glm(Parasites ~ CellSize, data = Bee, family = binomial)
+summary(m1)
+```
+Okay, so we can see that we have estimates of -11.245 and 22.175 for the intercepts and slope and that these parameter estimates are significant at the 5% level.  What does this mean exactly?  Well we can use these parameter estimates to calculate the probability that a cell is infected.
+$$\pi_i=\frac{e^{\eta_i}}{(1+e^{\eta_i})}\quad \textrm{where} \quad \eta_i=-11.245+22.175\times CellSize_i$$
+We can calculate these values manually or by using the `predict()` function in R.
+```{r}
+newdata_1 <- data.frame(CellSize = seq(0.35,0.66, length = 50))
+newdata2 <- cbind(newdata_1, predict(m1, newdata_1, type = "link", se.fit=TRUE))
+newdata2<- within(newdata2, {
+  predvals <- plogis(fit)
+  LL <- plogis(fit - 1.96 * se.fit)
+  UL <- plogis(fit + 1.96 * se.fit)
+})
+ggplot(data=newdata2,aes(x=CellSize,y=predvals))+
+  xlab("Cell Size")+
+  ylab("Probability of Parasite Presence")+
+  geom_line(data=newdata2,aes(x=CellSize,y=predvals),color="red")+
+  geom_ribbon(data=newdata2,aes(ymin=LL,ymax=UL,fill="red"),alpha=.2)+
+scale_y_continuous(limits = c(0, 1))+
+  geom_point(data=Bee,aes(x = CellSize,y = Parasites))
+
+```
+
+**Model Validation**
+Validating a binomial GLM can be difficult becuase the response variable is simply zero and one. We should however usie common sense and although rare for true binomial data, evaluate for overdispersion.
+
+**Binomial GLM with Proportion data**
+Sticking with the same theme as the Bee parasite data above, we will work with another data set in which 4 comercially available acaricideson the Varoa mites.  115 groups of 4 mites were exposed to a pesticides and the number of dead mites were counted after 24 hours.  The data consists of these mortality data, as well as categorical data on the type of pesticide and continuous data on the concentration used.  Lets load the data!
+
+```{r}
+mite <- read_csv(file = "~/Dropbox/Teaching/R for Data Science/GLMGLMM_AllData/DrugsMites.csv")
+str(mite)
+```
+Using the PDF of the binomial distribution we can calcualte the probability that Y= 0 (i..e dead) in a group of N=4 for a given probablity $\pi$. For example if $\pi=0.4$ and $N=4$, the $Pr(Y=0)$ is
+
+$$Pr(Y=0|\pi=0.4)=\binom{4}{0}\times 0.4^0\times (1-0.4)^{4-0}=0.0625$$
+and we can do this for different values of $\pi$ and different numbers of trials $N=4,N=10,N=50)$
+```{r}
+Xlab="Number of dead mites"
+Ylab="Probabilities"
+
+n11<-4; x11<-0:n11; p11<-0.2
+n12<-4; x12<-0:n12; p12<-0.5
+n13<-4; x13<-0:n13; p13<-0.7
+
+n21<-10; x21<-0:n21; p21<-0.2
+n22<-10; x22<-0:n22; p22<-0.5
+n23<-10; x23<-0:n23; p23<-0.7
+
+n31<-50; x31<-0:n31; p31<-0.2
+n32<-50; x32<-0:n32; p32<-0.5
+n33<-50; x33<-0:n33; p33<-0.7
+
+prop11<-dbinom(x11, size=n11, prob=p11)
+prop12<-dbinom(x12, size=n12, prob=p12)
+prop13<-dbinom(x13, size=n13, prob=p13)
+
+prop21<-dbinom(x21, size=n21, prob=p21)
+prop22<-dbinom(x22, size=n22, prob=p22)
+prop23<-dbinom(x23, size=n23, prob=p23)
+
+
+prop31<-dbinom(x31, size=n31, prob=p31)
+prop32<-dbinom(x32, size=n32, prob=p32)
+prop33<-dbinom(x33, size=n33, prob=p33)
+
+
+par(mfrow=c(3,3), mar = c(5,5,2,2), cex.lab = 1.5, cex.main = 1.5)
+plot(x21,prop21,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p21,",",n21,")"))
+plot(x22,prop22,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p22,",",n22,")"))
+plot(x23,prop23,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p23,",",n23,")"))
+
+plot(x11,prop11,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p11,",",n11,")"))
+plot(x12,prop12,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p12,",",n12,")"))
+plot(x13,prop13,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p13,",",n13,")"))
+
+plot(x31,prop31,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p31,",",n31,")"))
+plot(x32,prop32,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p32,",",n32,")"))
+plot(x33,prop33,type="h",xlab=Xlab,ylab=Ylab,main=paste("B(",p33,",",n33,")"))
+```
+
+As before we need to define the error model, the predictor function, and the link function.  As in the last example we will use the logit link for a binomial distribution.  But first a littel housekeeping to get the data ready
+
+```{r}
+mite$Pesticides <- factor(mite$Acaricide)
+####################################################
+
+
+mite$Neg <- mite$Total - mite$Dead_mites
+```
+
+We can specify the binomial model for this analysis in two ways--with a two column successes and failures response, or with a single column proportion died response.  The two column approach first.
+
+```{r}
+y=with(mite,cbind(Dead_mites, Neg ))
+m2 <-glm(y~Concentration * Pesticides,family = binomial, data = mite)
+summary(m2)
+```
+
+In the second formulation we have to calculate the proportion from the data.  
+```{r}
+mite$PosProp <- mite$Dead_mites / mite$Total
+
+```
+But now with just the proportion data we must also specify how many trials (i.e. the denominator in the calculation of the proportions) by adding a weights argument to the GLM code.
+```{r}
+m3 <- glm(PosProp ~ Concentration * Pesticides,family = binomial,
+          weights = Total,
+          data = mite)
+summary(m3)
+```
+When using proportion data (via either of the above methods) overdispersion is a more common issue. So we must test for overdispersion.
+```{r}
+E1 <- resid(m3, type = "pearson")
+sum(E1^2) / (m3$df.res)
+
+```
+
+Not too bad!
+
+So now lets take a look at inference, since we have two main effects and their interaction.  In this case we will use an automated function `drop1()` that will sequentially drop out terms from most complex to simplest and test them using LRT. 
+
+```{r}
+drop1(m3,test="Chi")
+```
+In this case we find that the interaction term is significant at the 5% level, or alternatively we could examine CIs and would find that they do not overlap zero.  
+
+So what does this mean? Well as before we can use the predict function to generate a plot for the data and fitted model.
+
+```{r}
+newdata_1 <- data.frame(Concentration = rep(seq(0, 2.16, length=50),2),
+                      Pesticides = factor(rep(1:4,each=50),levels=1:4))
+newdata2 <- cbind(newdata_1, predict(m3, newdata_1, type = "link", se.fit=TRUE))
+newdata2<- within(newdata2, {
+  predvals <- plogis(fit)
+  LL <- plogis(fit - 1.96 * se.fit)
+  UL <- plogis(fit + 1.96 * se.fit)
+})
+ggplot(data=newdata2,aes(x=Concentration,y=predvals,color=Pesticides,group=Pesticides))+
+  xlab("Concentration (1/mg.l")+
+  ylab("Probability of Dead Mites")+
+  geom_line(data=newdata2,aes(x=Concentration,y=predvals,group=Pesticides))+
+  geom_ribbon(data=newdata2,aes(ymin=LL,ymax=UL,group=Pesticides,fill=Pesticides),alpha=.2)+
+  scale_y_continuous(limits = c(0, 1))+
+  geom_point(data=mite,aes(x = Concentration,y = PosProp,group=Pesticides,color=Pesticides))
+
+```
+
+

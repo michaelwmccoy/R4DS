@@ -1,0 +1,662 @@
+---
+title: "Introduction to GLM"
+author: "Michael W. McCoy"
+date: "2/26/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+require(gridExtra)
+require(bbmle)
+```
+
+For this exercise we will use some data on the impact of comercial fishing on deepsea fish populations -- originally published in Bailery et al. 2008.  The data are for bottom trawl samples taken at depths of 800-4865 meters conducted in the NE atlantic from 1979-1989 and 1997-2002. The first period is considered pre-comercial fishing samples and the second commercial fisihing.  There is a wide diversity of fish species that inhabit these depth ranges (some overlapping and some not).  Thus the biological question that we want to answer is whether the effects of commercial fishing affected species assemblages.  There were more than 100 species in the original data set so we will focus ona simple metric of diversity.."total abundance" = the number of individuals counted.
+
+First lets load the data.
+
+```{r }
+Fish <- read_csv(file = "~/Dropbox/Teaching/R for Data Science/GLMGLMM_AllData/Baileyetal2008.csv")
+Fish
+
+##These two steps remove a spatial outlier and one data point for which there are no coordinates
+Fish=na.exclude(Fish)
+Fish <- Fish[c(-135), ]
+Fish
+#Express depth in km
+Fish=mutate(Fish, MeanDepth = MeanDepth / 1000)
+```
+Lets look at a picture of the data to see what we are working with.
+
+```{r}
+p1=ggplot( Fish,aes(x=MeanDepth, y=TotAbund))+
+  geom_point()+
+  xlab("Mean depth (km)")+
+  ylab("Number of fish")+
+  facet_wrap(~factor(Period))+
+  theme_bw()
+p1  
+
+```
+
+For practice and for pedagogical value...We will start by fitting a simple linear regression to these data.  
+
+```{r}
+
+m0 <- lm(TotAbund ~ MeanDepth,data = Fish)
+
+```
+
+Now we need to examine the out put and diagnostics for this analysis.  We will do this in two ways.  First we we will code them manually for practice and then we will examine  the built in diagnostics for linear models.  Then .
+
+```{r}
+summary(m0)
+
+e0 <- resid(m0)
+f0 <- fitted(m0)
+
+##make residuals plot
+resid_plot=tibble(e0=resid(m0),f0=fitted(m0))
+r1=ggplot(resid_plot,aes(x = f0,y = e0))+geom_point()+
+  xlab("Fitted values")+
+  ylab("Residuals")+
+  geom_hline(yintercept =0)
+
+##Pair with a plot of the data fit
+p2=ggplot( Fish,aes(x=MeanDepth, y=TotAbund))+
+  geom_point()+
+  xlab("Mean depth (km)")+
+  ylab("Number of fish")+
+  theme_bw()+
+  geom_smooth(method="lm",se=FALSE)
+p2  
+
+
+grid.arrange(r1,p2,nrow=1)
+
+```
+
+Now lets look at the built in diagnostic plots.  First we check for homogeneity of variance then we check for independence adn normality.
+
+```{r}
+plot(m0)
+```
+
+What is the assessment of this model fit?
+
+Well we can identify 3 major problems form these plots.  
+  1. we have heterogeneity of variance indicated in the residuals. Specifically, we have higher variation in the residuals for larger fitted values.  
+  2. there is evidence of nonlinearity (i.e. non-independnece) in the residuals. There are cluseters of points both above and below zero.
+  3. as indicated in the right hand panel below..we get negatve fitted values, which doesnt make sense becuase we cant have less than 0 fish. 
+
+To illustrate the implications of this this third issue we can simulate data assuming a normal distribution on the fitted line.
+
+```{r}
+par(mfrow = c(1,1), mar = c(5,5,3,2))
+plot(x = Fish$MeanDepth, 
+     y = Fish$TotAbund,
+     xlab = "Mean Depth (km)",
+     ylab = "Total abundance",
+     cex.lab = 1.5,
+     pch = 1,
+     ylim = c(-300, 1200))
+abline(m0, lwd = 5)
+abline(h = 0, lty = 2)
+
+#range(Fish$MeanDepth)
+md <- seq(0.804, 4.865, length = 10)
+
+Beta <- coef(m0)
+for (i in 1:10){
+	mu <- Beta[1] + Beta[2] * md[i]
+	yi <- rnorm(100, mean = mu, sd = summary(m0)$sigma)
+	points(jitter(rep(md[i], 100)), jitter(yi), col = grey(0.5), pch = 16, cex = 1)
+}
+#################################################
+```
+So problem number 4!  The model we fit doesn't make biological sense!
+
+We need to fit a better model!
+
+**Poisson GLM**
+
+Total abundance is count data and we "know" from lecture that for count data there are two commoonly used distributions
+
+The Poisson pdf is 
+
+$$f(Y|\mu)=Pr(Y=y|\mu)=\frac{\mu^y*e^{-\mu}}{y!}$$
+So, suppose that we know that on average 3 fish are caught in a trawl.  Then we can use the pdf of the Poisson to calculate the probabilty that 0, or 2 or 10 fish are caught.
+$$Pr(Y=0|\mu=3)=\frac{3^0*e^{-3}}{0!}=0.049$$
+$$Pr(Y=2|\mu=3)=\frac{3^2*e^{-3}}{2!}=0.224$$
+$$Pr(Y=10|\mu=3)=\frac{3^{10}*e^{-3}}{10!}=0.0008$$
+We can also use built in functions in R to get these three outcomes. For example, the command `dpois(0,lambda=3)` will give us the first value above.
+```{r}
+dpois(0,lambda=3)
+dpois(2,lambda = 3)
+dpois(10,lambda=3)
+```
+
+Now we can draw the possion distribution for different values of lambda.
+
+```{r}
+par(mfrow = c(2,2), mar = c(5,5,3,2))
+x1 <- 0:10
+y1 <- dpois(x1,lambda = 2)
+plot(x = x1, 
+     y = y1, 
+     type = "h", 
+     xlab = "Total abundance values",
+     ylab = "Probability",
+     cex.lab = 1.5,
+     main = "mean = 2",
+     cex.main = 1.5)
+     
+x1 <- 0:15
+y1 <- dpois(x1, lambda = 5)
+plot(x = x1, 
+     y = y1, 
+     type = "h", 
+     xlab = "Total abundance values",
+     ylab = "Probability",
+     cex.lab = 1.5,
+     main = "mean = 5",
+     cex.main = 1.5)
+    
+x1 <- 0:20
+y1 <- dpois(x1,lambda = 10)
+plot(x = x1, 
+     y = y1, 
+     type = "h", 
+     xlab = "Total abundance values",
+     ylab = "Probability",
+     cex.lab = 1.5,
+     main = "mean = 10",
+     cex.main = 1.5)
+     
+x1 <- 0:200
+y1 <- dpois(x1,lambda = 100)
+plot(x = x1, 
+     y = y1, 
+     type = "h", 
+     xlab = "Total abundance values",
+     ylab = "Probability",
+     cex.lab = 1.5,
+     main = "mean = 100",
+     cex.main = 1.5)
+```
+So why does the range of possible values increase as we move from a to d?  
+
+In the Fish data set that we are working with more than one value for Total abundance (i.e. y values), but instead we have 146 TotAbund values.  So we can rewrite our distributional model as 
+$$TotAbund_i \approx Pois(\mu_i)\Rightarrow E(TotAbund_i)=var(TotAbund_i)=\mu_i$$
+Given this distributional expectation we now need to specify a predictor function for each of our samples (observvations), $\eta_i$.  And as we learned previously, the predictor function is always linear.
+
+$$\eta_i=\beta_0+\beta_1*MeanDepth$$
+We can add to this linear predictor and we will do so later on...by incorporating `Period` as a categorical predictor...
+$$\eta_i=\beta_0+\beta_1*MeanDepth+\beta_2*Period$$
+...and then the interaction between `MeanDepth` and `Period`
+$$\eta_i=\beta_0+\beta_1*MeanDepth+\beta_2*Period+\beta_3*MeanDepth*Period$$
+But lets stick with the simple linear regression to start with.  
+
+**The Link - Linking the linear predictor to the distribution model**
+Now we want to link the mean $\mu_i$ to the predictor $\eta_i$.  Since we are restricted to positive integers the log link fucntion is a good option.  The log lnk is defined by:
+$$log(\mu_i)=\eta_i \Leftrightarrow \mu_i=e^{\eta_i}=e^{\beta_0+\beta_1*MeanDepth_i}$$
+
+Wtih this we have all three key components of a GLM:
+  1. Linear predictor
+  2. Error distribution
+  3. Link Funciton
+
+Now it is time to estimate the paramters of the regression model. Unlike the case for the simple linear model assuming Normally distributed errors, we can not use OLS becuase the symetrical distributional assumtions required for OLS estimateors are likely violated.  So we will estimate teh regression parameters using Maximum likelihood.  Here and for most things in the future we will use a frequentist approach.  
+
+To fit a Poisson GLM in R using maximum likelihood we simply need to add 2 things to our basic linearm model code.  We need to change `lm()` to `glm()` and we need to specify the error family and if not using a default lnk function...the link function.
+
+```{r}
+m2<-glm(TotAbund~MeanDepth,data=Fish,family = poisson(link=log)) #log link is the default
+```
+The numeical results can be viewed via the `summary()` function.
+```{r}
+summary(m2)
+```
+Okay, so now that we have fit the model and seen the output we need to commence with model validation and then...if there are no problems...model interpretation. Model validation is simply the process of making sure the assumptions of the model are met and that the fit to the data is sufficent.  Model interpretation in contrasts attempts to explain the numerical output in terms of biology that we are trying to explain.
+
+**Model Validation and Interpretation**
+In this example we will switch back and fourth between Validation and interpretation as a more efficeicnt way to get you acustomed to what the out means. However, in reality we should do validation before wasting our time interpteting an invalid model.
+
+Lets look at the summary output, becuase there are lots of useful and less useful components to this output.  
+```{r}
+summary(m2)
+```
+The default method of finding maximum likelihood in a GLM if via a method called *iterative weighted least squares* and so the line at the end of the `summary()` output is the *Number of Fisher Scoring iterations*.  This is relatd to the number of iterations necessary to get to the MLE.   Unless there are `warning` messages related to optimization or other serious numerical issues this information can be largely ignored.  
+
+Just above the *Number of Fisher Scoring iterations* you will see the `AIC` value, which can be used in a model comparison approach to find the otpimal model.  
+Next is the residual and null deviance values.  The null deviance is calculated from a model that only includes an intercept (the worst possible model) and the residaul deviance is calculated from thre current model.  WE can use these lines in two ways.  First we can determin the percent deviance explained...which is similar to the use of Residual Sums of Squared used to calculate and $R^2$ value in a simple linear regression.  
+
+However, note in GLM we can not calculate $R^2$ but we can calculate something that tells us the amount of deviance explained.
+$$100\times\frac{null deviance-resid deviance}{null deviance}$$
+Try to calculate that from this model
+```{r}
+100*( 27779-15770)/27779
+```
+
+So we can say the explanatory variable `MeanDepth` explains 43.23 %of the variation in total fish abundance.  So next lets deal with the estimated parameters (we will return to the assumed dispersion parameter later).  In tis section of the output we have for each regression parameter (i.e. doe each $\beta_i$) we get 4 pieces of numerical output.
+  1. The estimate
+  2. std. error
+  3. z-value
+  4. p-value
+
+We use this information for inference assuming a NHST approach.  The ratio of the estiamte to the Std. error gives us the f-value ...$\frac{estiamte}{std. err}=z-value$. So under the Null hypothesis ($H_0:\beta_=0), we expect a z-value of 0.  So the larger teh z-value the smaller the p-value.  
+  
+So we can interpret the estimate parameters by expressing them with the predictor function.  
+$$\eta_i=\beta_0+\beta_1*MeanDepth$$
+subsitute in the estiamtes of $\beta$ adn
+$$\eta_i=6.643-0.628\times MeanDepth$$
+Remember that the fitted values are an exponential function of `MeanDepth` -- $log(\mu_i)=\eta_i \Leftrightarrow \mu_i=e^{\eta_i}=e^{\beta_0+\beta_1*MeanDepth_i}$
+
+So the fitted values are 
+$$\mu_i=e^{\eta_i}=e^{6.643-0.628\times MeanDepth}$$
+In `R` we can extract these fitted values using the `predict()` function: note the addition of the option `type="response"` inside the predict function ensure that the exponent is taken as above so that the fitted data are on the scale of the raw data and not on the link scale.  
+First we need to create a new data frame in which to place the predictions.
+```{r}
+#range(Fish$MeanDepth)
+newdat_1=tibble(MeanDepth=seq(0.084,4.865,length=25))
+predict(m2,newdata=newdat_1, type="response")
+
+newdat=tibble(MeanDepth=seq(0.084,4.865,length=25),pred.vals=predict(m2,newdata=newdat_1, type="response"))
+
+ggplot(Fish,aes(x = MeanDepth,y = TotAbund))+geom_point()+
+     xlab("Mean depth (km)")+
+     ylab("Total abundance values")+
+  geom_line(data=newdat,aes(x=MeanDepth,y=pred.vals), col="red")+
+  scale_x_continuous(limits = c(.8, 5))+scale_y_continuous(limits = c(0, 1300))
+```
+Now we can redo the overlay of of simulated points using the model using this fit in a similar way that we did earlier after fitting these data with a standard linear model.  First we need to simulate random data using a poisson distribution and the estimates of lambda from our model fit.
+```{r}
+plot(x = Fish$MeanDepth,
+     y = Fish$TotAbund,
+     ylim = c(0,1300),
+     xlab = "Mean depth (km)",
+     ylab = "Total abundance values", cex.lab = 1.5)
+     
+
+HL <- seq(.804, 4.865, length = 25)
+Beta <- coef(m2)
+for (i in 1:25){
+	mu <- exp(Beta[1] + Beta[2] * HL[i])
+	yi <- rpois(50, lambda= mu)
+	points(jitter(rep(HL[i], 50)), 
+	       jitter(yi), col = grey(0.5), 
+	       pch = 16, cex = 1)
+}
+
+lines(newdat$MeanDepth, newdat$pred.vals, lwd = 3)
+
+```
+The first thing we can see from this ia that while we do not have unrealistic numbers like we did with the normal distribution, the spread of the observed data is way larger than our simulated data.  This may suggest a different problem with our model.
+
+To view this another way instead of superimposing these realizations of the poisson on the fitted line..we can add poisson distributions above the line..to see the effect in 3-d.
+
+```{r, warnings=FALSE}
+library(scatterplot3d)
+
+x <- seq(0.804, 4.865, length = 25)
+y <- exp(coef(m2)[1]+coef(m2)[2]*x)
+y
+z <- 0*x
+
+ymeas=rpois(length(y),lambda=y)
+#plot(x,ymeas,type="p",xlab="Covariate",ylab="Observed values")
+#lines(x,y)
+
+rr=scatterplot3d(x, y, z, highlight.3d=TRUE, col.axis="black",
+      col.grid="black", pch=20,zlim=c(0,0.05),type="l",lwd=3,
+      #ylim = c(9,1200),
+      cex.lab = 1.5,
+      xlab="Mean depth (km)",ylab="Possible values",zlab="Probability")
+
+
+MyX=c(1.000,2.000,3.000,4.000,5.000)
+for (i in 1:5){
+  xi=MyX[i]
+  yi=exp(coef(m2)[1]+coef(m2)[2]*xi)
+  yseq=round(seq(0,500,by=10))
+  zi=dpois(yseq, lambda=yi)
+  rb=cbind(xi,yseq,zi)
+  rr$points3d(rb, col = 1,type="h",pch=3)
+  rdat <- cbind(Fish$MeanDepth,Fish$TotAbund, rep(0,nrow(Fish)))
+  #rr$points3d(rdat, col = 1,type="p")
+}
+plot(m2)
+```
+
+**Validation with Residuals**
+
+As with linear regression we can use residuals for model validation. But, since we are not using Ordinary Least Squares and instead are using MLE, what are residuals in the context of a GLM?  For our purposes there are three primary types of residuals.
+
+1. ordinary ($\epsilon_i=TotAbund_i-\mu_i$)
+
+  
+2. Pearson ($\epsilon_i=\frac{TotAbund_i-\mu_i}{\sqrt{var(TotAbund_i)}}$)
+
+  
+3. deviance ($\epsilon_i=\sqrt{|2*TotAbund_i\times \log{(\frac{TotAbund_i}{\mu_i})}|}\times \sin(TotAbund_i-\mu_i)$)
+
+In words the deviance residuals are the signed square roots of the ith observation to the overall deviance, and is the default form of residuals for a GLM in R.  In practice they are equivelant to Pearsons residuals.  Pearsons residuals are the easiest to understand and calculate and they can be easily calculated for more complex distributions.
+
+**NOTE**
+When we are looking at Pearson's or deviance residuals for a Poisson (or other non normal distribution), we are not looking for patterns associated with normality as we did for ordinary residuals from a regression fit.  Instead we are interested in whether there is lack of fit...and so we are more interested in patterns in the Pearson residuals.
+
+Below we see 4 plots of the residuals that we can use to do model validation and in the last case explore hypotheses for any deviations.
+```{r, echo = FALSE}
+E1 <- resid(m2, type = "pearson")
+F1 <- fitted(m2)
+eta <- predict(m2, type = "link")
+
+par(mfrow = c(2,2), mar = c(5,5,2,2))
+plot(x = F1, 
+     y = E1,
+     xlab = "Fitted values",
+     ylab = "Pearson residuals",
+     cex.lab = 1.5)
+abline(h = 0, v = 0, lty = 2)
+
+plot(x = eta, 
+     y = E1,
+     xlab = "Eta",
+     ylab = "Pearson residuals",
+     cex.lab = 1.5)
+abline(h=0, v = 0, lty = 2)
+
+plot(x = Fish$MeanDepth, 
+     y = E1,
+     xlab = "Mean Depth (km)",
+     ylab = "Pearson residuals",
+     cex.lab = 1.5,
+     pch = 16)
+abline(h=0, v = 0, lty = 2)
+
+boxplot(E1 ~ Period, 
+        ylab = "Pearson residuals",
+        data = Fish,
+        cex.lab = 1.5, 
+        xlab = "Period")
+abline(h = 0, v = 0, lty = 2)
+```
+
+The default plot generated by `R` when you use the `plot()` function to visualize the residuals from a GLM  is depicted in Panel B.  This plot shows the residuals against the predicted values $\eta_i$. Try viewing the output from `plot(m2)` to see for yourself.
+```{r}
+#plot(m2)
+```
+However, when generating these plots manually, we might prefer the plot depicted in Panel A becuase it is a bit more intuitive.  
+
+Ultimately, it does not matter which of these two plots you use since they both clearly show that there is an increase in variation for larger fitted values...i.e. there is pattern!
+
+We can see from panel D that there is a pattern in the residuals with respect to `Period` as well.  Specifically, there is a greater number of residuals that are negative during the second period than in the first.  Thus, we should probably include period in our model as an additional explanatory factor that might acount for some of the extra variation.
+
+We can work through the code used to generate the above 4 panel figure to learn about how to extract residuals from models and generate diagnostic plots.
+
+**Residuals**
+
+To extract the residuals from a GLM fit we use the `R` function `resid()`.  By default this fucntion will calculate deviance residuals.
+```{r}
+resid(m2)[1:10] # adding the [1:10] made it so that only the first 10 values are printed
+```
+If you want the pearsons residuals you have to specify the option `type="pearson"`.
+```{r}
+resid(m2,type="pearson")[1:10] # do not include [1:10] if you need to extract all the resdiuals
+```
+
+Now to draw the diagnostic plots we need to extract the residuas using `resid()` and the fitted values using `fitted()` and the predicted values ($\eta$) using `predict()`. Then we can generate the plots.
+
+```{r}
+e1 <- resid(m2, type = "pearson")
+f1 <- fitted(m2)
+eta <- predict(m2, type = "link")
+resid_plot_dat=tibble(e1=e1,f1=f1,eta=eta)
+res1=ggplot(resid_plot_dat,aes(x = f1,y = e1))+geom_point()+
+     xlab("Fitted values")+
+     ylab("Pearson residuals")+
+geom_hline(aes(yintercept=0))
+
+res2=ggplot(resid_plot_dat,aes(x = eta,y = e1))+geom_point()+
+     xlab("eta")+
+     ylab("Pearson residuals")+
+geom_hline(aes(yintercept=0))
+
+resid_plot_dat$depth=Fish$MeanDepth
+res3=ggplot(resid_plot_dat,aes(x = depth,y = e1))+geom_point()+
+     xlab("Mean Depth")+
+     ylab("Pearson residuals")+
+geom_hline(aes(yintercept=0))
+
+resid_plot_dat$Period=factor(Fish$Period)
+res4=ggplot(resid_plot_dat,aes(x = Period,y = e1))+geom_boxplot()+
+     xlab("Mean Depth")+
+     ylab("Pearson residuals")+
+geom_hline(aes(yintercept=0))
+  
+grid.arrange(res1,res2,res3,res4,nrow=2)
+```
+
+Okay, so for the above we can already say there is some serious model mis-specification.
+
+**Overdispersion**
+
+The core statistic to for determining whether your data is overdispersed, is defined as
+$$dispersion=\frac{\chi^2}{resid. df}$$
+For a poisson GLM the pearson $\chi^2$ is calculated by:
+$$\chi^2=\sum_{i=1}^{N}\frac{(y_i-\mu_i)^2}{\mu_i}$$
+and is interpreted as over dispersed if the ratio of the residual $\chi^2$ to the residual degrees of freedom ($df=N-P$ which is the number of observations $N$ - the number of parameters $P$) greater than 1!
+
+If you have a dispersion statistic greatre than 1, then you should consider the following possible sources before moving to an overdispersed distribution:
+
+1 model is missing required explanatory variables (i.e. another process is important)
+2 there are outliers
+3 missing interaction terms (related to the first)
+4 may need to rescale one or more of your explanatory variables
+5 nonlinearity in the predictor
+6 wrong link function
+7 zero inflation
+8 non-indepdence or structure in the data
+
+So, how does one evalaute wheter a deviation from 1 in the dispersion statistic is great enough to be concerned about overdispersion?  Well, there is no convention, but you can use intuition and your understanding of scale as a guide.  For example if you only have 20 observations and deviation of 10% (i.e. dispersion stat = 1.1) then the overdispersion stat is probably not significantly different from 1.0.  IF however you had 100,000 observations...a 10% deviation might be more troubleing.  
+
+**So why do we care about overdispersion?**
+When the data are overdispersed, estimates of standard error on the predictors (parameters/coefficients) are biased and can lead to conclusions about the signficance of predictors when they are in reality not important for the model.
+
+There are a variety of ways of dealing with overdisperion, but the two most common are to either refit the model using a `quasi` distribution (like the `quasipoisson`), or using a negative binomial.  In general, it is more robust to use a negative binomial distribution (though often harder to fit technically), than to use a quasi-distribution.  This is because in many cases, overdispersion affects estimates of model coeficcients because of the distributional model assumptions/restrictions.  The negative binomial includes a second parameter called a "dispersion" or "heterogenetiy" parameter that changes the shape of the distribution and accomodates over dispersion when estimating coeficients and std. errors.  In contrast, the "quasi-poisson" only modifies the standard errors of the parameters and the not the parameter estimates.  This can be problematic because the mechanism behind the overdispersion could also affect the regression parameters.
+
+You can extract the data from a GLM fit for evaluating overdispersion by looking at the summary and looking at the estiamtes of residual deviance and degrees of freedom or you can extract the information and calcualate it independtly.
+```{r}
+summary(m2)
+15770/144
+
+## or ##
+
+N=nrow(Fish)
+P=length(coef(m2))
+Dispersion=sum(e1^2)/(N-P)
+Dispersion
+```
+*Note*-The two answers are not exactly the same because our estiamte (`e1`) of the residual deviance is based on pearson residauls, whereas the `GLM` uses deviance residuals by default.  However, the differences between the two will be neglible for most cases.  If in doubt, always default to the pearson residaul based estimate.
+
+**Next Steps**
+
+  *Checking for Outliers*
+We have considerable overdispersion, so now we can start investigating the potential soources outlined above before resorting to a negative binomial fit.  First we need to check to see if we may have outliers that are causing the problems with fit.  WE can use cooks.distance to identify potential outliers. *Reminder* - cooks distance are leave-one-out measures of influence.  If leaving a point out has a large effect on the model fit relative to all other points  it is consider a potential outlier.
+
+```{r}
+plot(cooks.distance(m2),type="h",ylim=c(0,20))
+abline(h=0,lty=2,lwd=2)
+```
+Cooks distances greater than 1 are considered influential.  In this case there are 29 points greater than 1.  THis suggest that there is something else other than typo, or wierd sampling anomaly is driving the overdispersion.
+
+  *Adding Covariates/Predictors*
+  
+  Now maybe we should consdier if there are other covariates that need to be added to the model.  We have data for sampling period for starters, and it is possible that adding that categorical predictor along with its interaction with MeanDepth to the model might account for some of the additional variation as we saw in the residuals plot.  So our new model should be 
+$$\eta_i=\beta_0+\beta_1\times MeanDepth+\beta_2\times Period+\beta_3\times MeanDepth\times Period$$
+To fit thsi model in `R` we need to use the following code
+```{r}
+m3=glm(TotAbund~MeanDepth*factor(Period),data=Fish,family=poisson)
+summary(m3)
+```
+Now we still need to check for overdispersion.
+
+```{r}
+e2=resid(m3 ,type="pearson")
+N=nrow(Fish)
+P=length(coef(m3))
+Dispersion=sum(e2^2)/(N-P)
+Dispersion
+```
+
+So we still have a high degree of overdispersion.  
+
+**Rescaling - Introducing the offset**
+
+Often since counts are the number of events that occur during a particular time period or over a particualr spatial distance, to understand the Poisson mean we need to adjust for the size of the area of time period in which sampling occurred (e.g. if each count covered a different area for example).  So we sometimes need to rescale the relationship to account for this.  So if we start with the poisson linear predictor:
+$$ln(\mu_i)=\beta_0+\beta_1\times X_i$$
+and we symbolize the area or period sampled as $t$ then we can rescale our response by taking the number of events counted adn divding by $t$
+$$ln(\frac{\mu_i}{t_i})=\beta_0+\beta_1\times X_i$$
+which is equivelant to 
+$$ln(\mu_i)=\beta_0+\beta_1\times X_i+ln(t_i)$$
+so the term, $ln(t_i)$ is called the offset.  It is entered into the poisson GLM as an additional predictor but with a coeficcient fixed at 1 (i.e. $\beta_{offset}=1$).  Thus it adjusts the independent counts for the size/duration of the sampling without estimating an "effect" for that preictor.  For example in our data set we have a varibale called "SweptArea" which describes the size of the area sampled for each fish count.  So we might need to adjust out coutns for the area of the sample.  So our model will be..
+$$\eta_i=\beta_0+\beta_1\times MeanDepth+\beta_2\times Period+\beta_3\times MeanDepth\times Period+ln(SweptArea)$$
+
+And to code it in R we use the `offset()` function inside our GLM function.
+
+```{r}
+m4=glm(TotAbund~MeanDepth*factor(Period)+offset(log(SweptArea)),data=Fish,family=poisson)
+summary(m4)
+```
+
+And again we need to still test for overdispersion to see if we have improved the fit.
+```{r}
+e3=resid(m4 ,type="pearson")
+N=nrow(Fish)
+P=length(coef(m4))
+Dispersion=sum(e3^2)/(N-P)
+Dispersion
+```
+
+Still, highly overdispersed. This is not too surprising because rescaling using offset will typically only help for mild overdispersion, but does not typcially help for overdispersion of this magnitude.
+
+So maybe we should change the distribution!
+
+**The Negative binomial GLM**
+The pdf of the negative binomial looks scary
+$$f(y|k,u)=\frac{\Gamma(y+k)}{\Gamma(k)\times \Gamma(y+1)}\times (\frac{k}{\mu+k})^k\times (1-\frac{k}{\mu+k})^y$$
+The important feature is however,just to note that the distribution is described by two parameters - $\mu$ and $k$.
+Using this function you could calculate the probability of getting any particular count.  For example, $Pr(Y=0|\mu=3,k=1)$.
+
+The mean and variance of the negqtive binomial distributions are 
+$E(Y)=\mu$ $var(Y)=\mu+\frac{\mu^2}{k}$
+
+We can see how this relates to an overdirpsed Poisson by considering the situation where k is large relative to $\mu^2$
+because the term $\mu_2/k$ will be close to zero and so the variance of Y is $\mu$ ... like in a Poisson. 
+
+Note that the dispersion statistic for the negative binomial should still = 1, and this is different from teh dispersion parameter k, which has not expectation.
+
+To run the negative binomial in R we can use a modified version of `glm` called `glm.nb`. Because this version of glm is written specifically and only for the negative binomial distribution we do not need to specify a family argument for the error model.  We will use the same coavariatesas we did for the Poisson.
+$$\eta_i=\beta_0+\beta_1\times MeanDepth+\beta_2\times Period+\beta_3\times MeanDepth\times Period+ln(SweptArea)$$
+
+```{r}
+library(MASS)
+m5=glm.nb(TotAbund~MeanDepth*factor(Period)+offset(log(SweptArea)),data=Fish)
+summary(m5)
+```
+Check for overdispersion?
+```{r}
+e4=resid(m5 ,type="pearson")
+N=nrow(Fish)
+P=length(coef(m5))+1
+Dispersion=sum(e4^2)/(N-P)
+Dispersion
+
+```
+*NOTE* in the code above we have added a +1 to P.  This is to account for the additional *k* parmeter in the negative binomial distribution.
+
+
+Now we can see that there is no (or negligble) overdispersion.  So this suggest that the neg binomial is a far superior model for these data.  However we can confirm that by looking at the AIC values for the two fits.
+
+```{r}
+ICtab(m4,m5,type="AICc",delta=TRUE,weights=TRUE)
+```
+
+
+Now we are satisfied that we have fit out model and that assumptions are met...we need to make soem inferences.
+
+**Model Selection**
+
+We can look again at the summary for our final model again. 
+```{r}
+summary(m5)
+```
+And we see that there is not strong support for the interaction term. For example, we can look at the estimate of the z-value or we can evaluate the 95% CIs and see that they overlap zero for this parameter. **You have to choose your method of inference!**
+```{r}
+confint(m5)
+```
+
+Another approach is to apply a Likelihood ratio test. The way this works in this example is that we have two models.  Model m5 that contains the two main terms, *MeanDepth* and *Period* as well as their *MeanDepth x Period* 
+$$m5=\beta_0+\beta_1\times MeanDepth+\beta_2\times Period+\beta_3\times MeanDepth\times Period+ln(SweptArea)$$
+and Model m6 that only contains the two main terms.  
+$$m6=\beta_0+\beta_1\times MeanDepth+\beta_2\times Period+ln(SweptArea)$$
+
+Notice that the model m5 has 4+1 parameters while m6 has 3+1 parameters.  And since these two models are fit to the same data Model m5 will always have smaller deviance simply becuase it has 1 additonal parameter. Using a LRT we will test the null hypothesis that  $\beta_3 = 0$ for the interaction term. Thus under the null hypothesis the deviances of the two models should be equal to zero!  Thus, a large difference between the deviances of the two models provides evidence against the null hypothesis.  SPecifically..
+$$D_5 -D_6\approx\chi_{p5-p6}^{2}$$
+This test can be accomplished by fitting both models and then using the `anova()` function in `R` to run the test.
+```{r}
+Fish$fPeriod=factor(Fish$Period)
+Fish$LogSA=log(Fish$SweptArea)
+
+m5=glm.nb(TotAbund~MeanDepth*fPeriod+offset(LogSA),data=Fish)
+m6=glm.nb(TotAbund~MeanDepth+fPeriod+offset(LogSA),data=Fish)
+anova(m5,m6,test="Chi")
+#Now test whether the covariate is significant
+m7=glm.nb(TotAbund~MeanDepth+offset(LogSA),data=Fish)
+anova(m6,m7,test="Chi")
+
+
+```
+So we can conclude that the inclusion of the interaction term is not supported. But the inclusion of PEriod as a covariate is supported.  So now we can move on to the final step. Model interpretation.  
+```{r}
+summary(m6)
+```
+
+Our final estimated model can be represented as
+$$TotAbund_i$\tilde NB(\mu_i,1.94)$$ 
+and the expected value of *TotAbund* is therefore $E(TotAbund_i)=\mu_i$. So since $\mu_i=e^{\eta_i}$ then we can extrapolate for each time period.
+
+*Period 1*
+$$\mu_i=e^{-3.31-1.01\times MeanDepth_i+ln(SweptArea_i)}$$
+*Period 2*
+$$\mu_i=e^{(-3.31-0.43)-1.01\times MeanDepth_i+ln(SweptArea_i)}$$
+Which means that our model suggest two exponential curves, each with the same slope for how the response changes with *MeanDepth* but with different intercepts.  
+
+Now we can generate a plot of the fitted model.  But first we have to account for the offset so that we dont have to plot the model fits in 3-dimensions.  This can be done by substituting the log of the mean of *SweptArea*.  
+
+First we need to extract the fitted values and associated errors using the `predict()` function.
+
+```{r}
+newdata_1 <- data.frame(MeanDepth=rep(seq(from= 0.804,
+                                    to=4.865,
+                                    length= 25),2),
+                      fPeriod = factor(rep(1:2,each=25),levels=1:2),
+                      LogSA = mean(log(Fish$SweptArea)))
+newdata2 <- cbind(newdata_1, predict(m6, newdata_1, type = "link", se.fit=TRUE))
+ newdata2<- within(newdata2, {
+  predvals <- exp(fit)
+  LL <- exp(fit - 1.96 * se.fit)
+  UL <- exp(fit + 1.96 * se.fit)
+})
+ggplot(data=newdata2,aes(x=MeanDepth,y=predvals,color=fPeriod,group=fPeriod))+
+  xlab("Mean depth (km)")+
+  ylab("Total abundance values")+
+  geom_line(data=newdata2,aes(x=MeanDepth,y=predvals,group=fPeriod))+
+  geom_ribbon(data=newdata2,aes(ymin=LL,ymax=UL,group=fPeriod,fill=fPeriod),alpha=.2)+
+  scale_x_continuous(limits = c(.8, 5))+scale_y_continuous(limits = c(0, 1300))+
+  geom_point(data=Fish,aes(x = MeanDepth,y = TotAbund,group=fPeriod,color=fPeriod))
+
+```
+
+
