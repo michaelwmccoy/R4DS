@@ -1,0 +1,353 @@
+---
+title: "A protocol for LMM"
+output: html_notebook
+---
+
+```{r load_libraries, echo=FALSE}
+library(lme4)
+library(tidyverse)
+library(bbmle)
+```
+In this exercise we will walk through the steps to complete an LMM in R.  As you will see there are details in this tutorial that we have not yet covered in class (the old Chicken and Egg).  
+However, with the additional challenges associated with the Covid-19 apocolypse...you will have to work harder to fill in any gaps.  
+
+The basic assumption of a linear mixed-effects model are 
+  •Variation within groups follows a normal distribution with equal variance among groups.
+  
+  •Groups are randomly sampled from a“population” of groups (i.e., are independent and sampled without bias).
+  
+  •Group effectshavea normal distribution.
+  
+  •Replicates within groups are also randomly sampled (i.e. independentand sampled without bias).
+  
+  •No carry-over between repeated measurements on the same subject.
+  
+  •Sphericity: the variances of the differences between all pairs of factor levels are equal. 
+
+In this exercise you will also learn about **two additional diagnostics** that must be considered for mixed effects models
+
+
+To demonstrate the LMM analysis we will analysw data on spiders distributions.
+```{r}
+spiders <- read.table(file = "Spiders.txt", 
+                       header = TRUE, 
+                       dec = ".")
+spiders=as.tibble(spiders)
+names(spiders)
+str(spiders) 
+```
+
+The original data set had data from 31 plots, but for pedagogical simplicity we are going to leave out some data.  To do this we will use `dplyr' to extract uwanted plots.
+
+```{r}
+spiders$fplot=as.factor(spiders$Plot)
+spiders=filter(spiders,((fplot != "4" & fplot != "9" & fplot != "11" & fplot != "14" & fplot != "23")))
+```
+
+Now we have the data, lets take a look using ggplot so that we can lable points by plot to help visualize the random plot effect.  
+
+```{r}
+ggplot(spiders,aes(x=HerbLayer,y=Hlog10,colour=fplot))+geom_point()
+```
+
+Now, we will go through a 3 part protocol for analysing data in R using linear mixed effects models using the r library `lme4`.
+
+**3 Step Protocol**
+*Step 1 - Select the random structure*
+
+Based on prior knowledge of the experimental design and knowledge of the dependency structure in the data select the random effects that you would like to account for in your data.  For the spider data we should expect observations from the same plot to be correlated.  THis may be due to small scale unmeasured habitat effects, spiders within sites interact but not between sites (inherent correlation), or maybe different people collected the data at different sites.  
+
+*Step 2 - Fit a model and investigate covariates in the fixed part of the model*
+
+This can be done using model selection or an information theoretic approach. 
+
+For the spiders data we will include 3 covariates - Percent Herb layer coverage, percetn ground vegetation, and percentage of litter content. Sometimes it is helpful to standardize or rescale variables when you have multiple continuous predictors. 
+
+For illustration I will do that here by writing a standardization function, but you can also do this using the function scale() (You should try it!)
+
+```{r}
+stand=function(x){(x-mean(x,na.rm=T))/sd(x,na.rm=T)}
+spiders$HerbLayerc <- stand(spiders$HerbLayer)
+spiders$GroundVegc <- stand(spiders$GroundVeg)
+spiders$Litterc    <- stand(spiders$Litter)
+```
+
+**Question 1 - What does this standardization do? What does the scale function do?**
+
+
+Now we can run the model, for this example we are going to assume that there are no interactions. We specify the random effect in R by adding the random factor parenthetically. In this case we want to incorporate the plot as a random effect by adding +(1|fplot)
+
+```{r}
+m1 <- lmer(Hlog10 ~ HerbLayerc + GroundVegc + Litterc + (1 | fplot),data = spiders)
+plot(m1)
+qqnorm(resid(m1))
+qqline(resid(m1))
+```
+
+**Question 2 - Do these residuals incorporate the random effects?**
+
+
+
+To explore the answer to this question we will extract the residuals and fitted values manually and plot them.
+
+```{r}
+e1=resid(m1)
+f1=fitted(m1)
+qplot(x=f1,y=e1)+geom_point()+geom_hline(yintercept=0)
+```
+
+This plot should match the one generated using `plot(m1)`.  So the question that we have to ask ourselves is "Are the fitted values on the x-axis of the residuals plot just the fixed part (i.e. deterministic) of the linear model or do they include the fixed part plus the random effects part of the model?
+
+To figure this out...lets manually calculate these values with 3 steps;
+1. manually extract the $\beta$ values; 
+2. extract the design matrix; and 
+3. matrix multiply these together to get the fitted values.
+
+```{r}
+betas=fixef(m1)
+X_mat=model.matrix(m1)
+fit_vals=X_mat%*%betas
+fit_vals
+```
+This code gives only the intercepts and covariates.  To get the random effects we need to use different functions.  
+
+```{r}
+re=ranef(m1)$fplot$'(Intercept)'
+all_re=re[as.numeric(as.factor(spiders$Plot))]
+```
+
+The vector re...now contains 26 values.  1 for each level of the factor plot. 
+```{r}
+re
+```
+And the vector all_re (all random effects) contains the random effects corresponding to each observations.
+```{r}
+all_re
+```
+
+So now we can reason that if the values generated by the function `fitted` includes both the fixed and random effects then if we add our manually calculated fixed terms (i.e. `fit_vals`) to the all random effects vector(i.e. `all_re`) and then subtract the fitted values we should get an answer of zero
+```{r}
+fit_vals+all_re-fitted(m1)
+```
+So this indicates that the values generated by `fitted` include the fixed and random effects and so the residuals plotted in the residuals plot are actually the residual error or the error left over after the randome effect is dealt with.  
+
+In other words, our model is
+
+$$y_{ij}=\beta_0+\beta_1\times x_{ij}+b_i+\epsilon_{ij}$$
+and so `all_re` gives us estimates of the random effects $b_i$...
+
+we call the estimates in the vector $b_i$ "conditional nodes".  And these conditional nodes are assumed to be Normally distributed with a mean of zero just like residuals.
+
+$$b_i \sim N(0,D)$$
+so to get the left over residual error after accounting for the contributions of the random effects 
+ we need to subtract the fixed effects + the random effects from the observations
+ 
+ $$\epsilon_{ij}\sim N(0,\sigma^2)$$
+
+```{r}
+epsilon=spiders$Hlog10-fit_vals-all_re
+epsilon
+```
+
+** A NEW DIAGNOSTIC**
+A new diagnostic that we should consider in mixed models is the distribution of the random effect conditional nodes estimates.  Remember we assume the conditional nodes are so we can evaluate them with a plot just like we do with residuals 
+
+$$b_i \sim N(0,D)$$
+
+```{r}
+library(broom.mixed)
+
+ff <- augment(m1)
+ff <- transform(ff,ffplot=reorder(fplot,X=.resid,FUN=mean,sort=sort))
+ggplot(ff,aes(x=ffplot,y=.resid))+geom_boxplot()+geom_point(size=4,alpha=0.5)+geom_hline(yintercept=0,size=2)+
+ coord_flip()+ggtitle("Conditoinal Nodes")
+qplot(x=f1,y=e1)+geom_point()+geom_hline(yintercept=0)+ggtitle("Residuals")
+
+```
+
+These plots look reasonable so we can mover forward with evaluating the numerical output of the model summary. 
+
+```{r}
+summary(m1)
+```
+ 
+**A 2nd New Diagnostic** 
+
+Check for singularity - this means checking to ensure the estimate of variance for the random effects is not 0.
+
+Now we want to make some inferences either doing NHST using LRT, or model selection or Information criterion.  
+
+Notice that there are no p-values for an LMM model fit, we will discuss this in lecture but the short story is that there is no consensus on a general and correct way to estimate degrees of freedom needed for determining a critical value.  Therefore, you will have to rely on estimates and CIs or a post hoc approach such as lmerTest or Anova in teh car package.  
+
+We will start by using the LRT approach.  For this we need to change the default settings for our analysis so that it uses ML rather than REML (`REML=FALSE`). We will also have to create simpler models for testing hypotheses.  For this I will introduce the new function called `update` which allows you to update an existing model without retyping the whole thing.  
+
+```{r}
+m2 <- lmer(Hlog10 ~ HerbLayerc + GroundVegc + Litterc + (1 | fplot), data = spiders, REML = FALSE)
+
+m2a <- update(m2, .~. - HerbLayerc)
+```
+Ah!  What do you think this means...we cant find the MLE!
+
+This is a common problem with mixed models.  They can be computationally challenging and numerically unstable.  If you remember back to the lecture on optimizers (the algorithms that find the MLE estimates) you may recall that you can never get to the absolute MLE but you can get infinitly close to it.  So the question is "How close do you have to get to decide you found it?" This is the convergence criterion.  When the new MLE does not improve the deviance explained by some specified amount (the tolerance tol in the error message above) then you decide you are close enough.   But sometimes you can never reach that level of convergence and so the model fails as above.  One solution is to change the optimizer to one that may be more efficient for you liklihood profile (surface), or you can change the tolerance criterion, but that is a bit more risky (dont do this unless you are confident you know what you are doing!). In this case changing the optimizer to "bobyqa" (a derivative free algorithm) solves the problem.
+
+To see available optimizers see ?optim and ?optimx
+
+```{r}
+m2 <- lmer(Hlog10 ~ HerbLayerc + GroundVegc + Litterc + 
+           (1 |fplot), data = spiders, REML = FALSE,
+           control=lmerControl(optimizer="bobyqa"))
+
+m2a <- update(m2, .~. - HerbLayerc)
+
+m2b <- update(m2, .~. - GroundVegc)
+m2c <- update(m2, .~. - Litterc)
+```
+
+**Question 3**
+
+What does the update function do...and what are the parts of the functions input
+
+
+Test the Herblayer effect
+
+```{r}
+anova(m2,m2a)
+```
+Test the Grounveg effect.
+```{r}
+anova(m2,m2b)
+```
+Test the Litter content effect.  
+```{r}
+anova(m2,m2c)
+```
+
+So what these `anova` functions are doing is taking the log likelihoods of the two models to test the the null hypothesis that the difference in the likelihoods of two models for that set of data is zero (i.e. there is no difference in the expalnatory power of the two models they have the same likelihood of generating the observed data).  Specifically, for the first .. $2\times (loglikelihood_{m2}-logliklihood_{m2a}) =0$ is a test statistic (the lrt) that follows a chi-squared distribution with a degrees of freedom equal to the difference in the number of parameters in the two models. 
+
+*Note this is the same as Type I sums of squares approach where the order matters!*  
+
+We could also do the same thing as the three steps above using the `drop1` function as long as our model has REML=FALSE.
+
+```{r}
+drop1(m2,test="Chisq")
+```
+
+Remember to keep the Sequential and Pooled testing order in mind (i..e the Type I vs Type III Sums of squares issues we talked about before Covid 19)
+
+To explore the Type I vs Type II SS issue you should examine and compare the output of the two outputs below and comapre them to the LRT results.
+
+```{r}
+anova(m1)
+Anova(m1,type="II")
+Anova(m1,type="III")
+Anova(m1,type="III",test="F") #Kenward Roger F Tests
+```
+
+
+Alternatively, we could use AIC.  
+
+```{r}
+ICtab(m2,m2a,m2b,m2c,type="AICc",delta=TRUE,weights=TRUE,nobs=nrow(spiders))
+```
+
+**Question 4 - How do you interepret these numerical results?** 
+
+
+
+
+**Step 3 - Present numercial output and present graphical results**
+
+To plot the fitted values against covariates while incorporating appropriate uncertainty you need to take a series of steps to further interrogate the model fits and to generate output for plotting.
+  1. Fit the final model using REML=TRUE
+
+```{r}
+m1 <- lmer(Hlog10 ~ HerbLayerc + GroundVegc + Litterc + (1 | fplot),data = spiders)
+```
+
+**Profiling and related plots**
+
+In this section I will introduce some higher level model diagnostics that can be helpful for more complex model fits. These can be usefule when standard diagnostics are hard to interpret or when you have numerical instability or unexpected patterns in output.  
+
+*profile zeta plot*
+The profile zeta plot (xyplot) is simply a plot of the profile zeta function for each model parameter; linearity of this plot for a given parameter implies that the
+likelihood profile is quadratic (and thus that Wald approximations would be reasonably accurate).
+```{r}
+library(lattice)
+p=profile(m1)
+xyplot(p)
+```
+Ideally the profile zeta plot will be close to a straight line over the region of interest, in which case we can perform reliable statistical inference based on the parameter  estimates,  its  standard  error  and  quantiles  of  the  stan-dard normal distribution. We will describe such as situation as providing a good normal approximation for inference. The common practice of quoting a parameter estimate and its standard error assumes that this is always thecase.
+
+**The profile density plot** 
+displays an approximation of the probability density function of the sampling distribution for each parameter. 
+These densities are derived by setting the cumulative distribution function. If the profile zeta plot is linear, then the profile density plot will be Gaussian.
+
+```{r}
+densityplot(p)
+```
+**The profile pairs plot** 
+Gives an approximation of the two-dimensional profiles of pairs of parameters, interpolated from the univariate profiles. The profile pairs plot shows two-dimensional 50%, 80%, 90%, 95% and 99% marginal confidence regions based on the likelihood ratio, as well as the profile traces, which indicate the conditional estimates of each parameter for fixed values of the other parameters. While panels above the diagonal show profiles with respect to the original parameters (with random-effects parameters on the standard deviation/correlation scale, as for all profile plots), the panels below the diagonal show plots on the (deviance) scale. The below-diagonal panels allow us to see distortions from an elliptical shape due to nonlinearity of the traces, separately from the one-dimensional distortions caused by a poor choice of scale for the parameters. not  only  provides  information  onthe sensitivity of the model fit to changes in parameters, it also tells us how the parameters influence each other. 
+
+```{r}
+splom(p)
+```
+
+**Profile Deviance Plot**
+
+```{r}
+xyplot(p, absVal = TRUE)
+```
+
+Estimate Confidence intervals.  Three methods
+```{r}
+WaldCI=confint(m1,method="Wald")
+ProfileCI=confint(m1,method="profile")
+BootCI=confint(m1,method="boot")
+```
+
+Plot and Compare
+```{r}
+fixef(m1)
+newdat=data.frame(type=rep("Boot",4),parameter=c("Int","HerbLayer","GroundVeg","Litterc"),estimate=as.vector(fixef(m1)),lower=as.vector(BootCI[3:6,1]),upper=as.vector(BootCI[3:6,2]))
+
+newdat=rbind(newdat,data.frame(type=rep("Profile",4),parameter=c("Int","HerbLayer","GroundVeg","Litterc"),estimate=as.vector(fixef(m1)),lower=as.vector(ProfileCI[3:6,1]),upper=as.vector(ProfileCI[3:6,2])))
+
+newdat=rbind(newdat,data.frame(type=rep("Wald",4),parameter=c("Int","HerbLayer","GroundVeg","Litterc"),estimate=as.vector(fixef(m1)),lower=as.vector(WaldCI[3:6,1]),upper=as.vector(WaldCI[3:6,2])))
+
+ggplot(data=newdat,aes(x=parameter,y=estimate,ymin=lower,ymax=upper,group=type,color=type))+geom_point()+geom_errorbar(aes(ymin=lower,ymax=upper))+geom_pointrange(position=position_dodge(width=0.2))+coord_flip()   
+```
+
+
+2. Specify the values of the covarieates for which you would like to do predictions and Convert the covariates into a matrix (e.g. using data.frame and sometimes `expand.grid`)
+
+```{r}
+newdata1=data.frame(HerbLayerc=seq(-1.3,2,length=10),GroundVegc=0,Litterc=0)
+X <- model.matrix(~HerbLayerc + GroundVegc + Litterc, data = newdata1)
+```
+3. Calculate the predicted values via $X\times \beta$
+```{r}
+betas     <- fixef(m1)
+fit_vals <- X %*% betas
+
+```
+4. Calculate the standard errors for the predicted values
+  
+```{r}
+
+se<- sqrt(diag(X %*% vcov(m1) %*% t(X)))
+```
+
+5. Generate and plot model predictions and 95% prediction intervals 
+```{r}
+ newdata2<- within(newdata1, {
+  predvals <- I(fit_vals)
+  LL <- I(fit_vals - 1.96 * se)
+  UL <- I(fit_vals + 1.96 * se)
+})
+ggplot(data=newdata2,aes(x=HerbLayerc,y=predvals))+
+  xlab("% Cover Herbs")+
+  ylab("Shannon Index")+
+  geom_line(data=newdata2,aes(x=HerbLayerc,y=predvals))+
+  geom_ribbon(data=newdata2,aes(ymin=LL,ymax=UL),alpha=.2)+
+  geom_point(data=spiders,aes(x = HerbLayerc,y = Hlog10))
+```
