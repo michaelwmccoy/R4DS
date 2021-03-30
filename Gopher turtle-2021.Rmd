@@ -1,0 +1,450 @@
+---
+title: "GLMM Poison"
+author: Michael McCoy - Modified from Bolker (2015)
+date: "`r format(Sys.time(), '%H:%M %d %B %Y')`"
+output: html_notebook
+---
+
+In this tutorial we will also learn about offsets and singularity errors - 
+
+```{r install_pkgs,eval=FALSE}
+pkgs_CRAN <- c("lme4","glmmTMB","blme",
+               "pbkrtest","coda","aods3","bbmle","ggplot2",
+               "reshape2","plyr","numDeriv","Hmisc",
+               "gridExtra","R2admb",
+               "broom.mixed","dotwhisker")
+install.packages(pkgs_CRAN)
+install.packages("coefplot2",
+    repos="http://www.math.mcmaster.ca/bolker/R",
+    type="source")
+```
+Activate Libraries
+```{r pkgs,message=FALSE,warning=FALSE}
+## primary GLMM-fitting packages:
+library("lme4")
+library("glmmTMB")
+library("blme")
+library("MASS")          ## for glmmPQL (base R)
+library("ggplot2")       ## for pretty plots generally
+library("gridExtra")     ## for grid.arrange()
+library("broom.mixed")
+library("dotwhisker")
+library("aods3")     ## overdispersion diagnostics
+library("bbmle")     ## AICtab
+library("pbkrtest")  ## parametric bootstrap
+library("Hmisc")
+library("tidyr")
+## for illustrating effects of observation-level variance in binary data:
+library("numDeriv")
+```
+
+```{r}
+## ggplot customization:
+theme_set(theme_bw())
+scale_colour_discrete <- function(...,palette="Set1") {
+    scale_colour_brewer(...,palette=palette)
+}
+scale_colour_orig <- ggplot2::scale_colour_discrete
+scale_fill_discrete <- function(...,palette="Set1") {
+    scale_fill_brewer(...,palette=palette)
+}
+## to squash facets together ...
+zmargin <- theme(panel.spacing=grid::unit(0,"lines"))
+```
+
+## Gopher tortoise
+
+The data are from Ozgul *et al.* 2009 "Upper respiratory tract disease, force of infection, and effects on survival of gopher tortoises" *Ecological Applications* 19(3), 786-798.
+
+### Data 
+
+```{r gopherdat}
+
+load("gopherdat2.RData")
+
+```
+
+As always...take a look at the data.  There are numerous ways one could do this. Look at the code here and see if you can figure our what its doing and change it to fit your preference.  Note the y-axis is shells/area this will come into relevance later.
+
+```{r}
+gplot1 <- ggplot(Gdat,aes(x=prev,y=1+shells/Area))+
+    stat_sum(aes(colour=factor(year), size=factor(..n..)))+
+    scale_size_discrete(range=c(3,6),name="overlap")+
+    scale_y_log10()+
+    scale_colour_discrete(name="year")+
+    geom_line(aes(group=Site),alpha=0.2)+geom_text(aes(label=Site))+
+    labs(x="Seroprevalence",y="1+shells/Area (log scale)")
+suppressWarnings(gplot1)
+
+gplot2 <- ggplot(Gdat,aes(x=Area,y=1+shells))+
+    stat_sum(aes(colour=factor(year), size=factor(..n..)))+
+    scale_size_discrete(range=c(3,6),name="overlap")+
+    scale_y_log10()+
+    scale_colour_discrete(name="year")+
+    geom_line(aes(group=Site),alpha=0.2)+geom_text(aes(label=Site))+
+    labs(x="Area",y="1+shells (log scale)")
+suppressWarnings(gplot2)
+gplot2+geom_hline(yintercept=1.041,color="red")+geom_hline(yintercept = 1.94)
+```
+
+**Fitting a model***
+
+We will start by fitting a basic model with a log-linear effect of prevalence, an offset of `log(Area)` (to make the expected number of shells proportional to `Area`), `year` as a fixed categorical effect, and `Site` as a random effect.
+
+```{r gopherfit1}
+x <- glmer(shells~prev+offset(log(Area))+factor(year)+(1|Site),
+      family=poisson,data=Gdat)
+```
+
+Uh oh!  We have a singularity problem!  Singularity means one of the random effects could not be estimated, or is very close to the boundary (i.e. close to zero). Lets take a look at the fitted model output to confirm.
+```{r gophersum1}
+summary(x)
+```
+
+This initial summary also shows that the site-level variance is exactly zero (corresponding to pooling our data/ignoring the effect of `Site`: if you want to inspect the random effects component of the summary by itself, you can specify `VarCorr(lme4_L)`). 
+
+```{r}
+VarCorr(x)
+```
+
+For comparison, I am also going to explicitly fit (non-mixed) generalized linear models with complete pooling and second model with a fixed effect of `Site`, respectively:
+
+```{r gopherglm}
+x1 <- glm(shells~prev+offset(log(Area))+factor(year),
+      family=poisson,data=Gdat) #pooled data ignoring site affect
+x2 <- glm(shells~prev+offset(log(Area))+factor(year)+factor(Site),
+            family=poisson,data=Gdat) #site as a fixed effect
+```
+
+```{r AICtab}
+ICtab(x,x1,x2,logLik=TRUE,type="AICc",delta=T)
+```
+The pooled `glm()` and `glmer()` fits have identical log-likelihoods (i.e. delta log likelihoods = 0), as expected (when the random-effects variance collapses to 0, `glmer()` is essentially fitting a pooled model ignoring the random effects of site)-- but, the `glmer()` fit is AIC-penalized for an additional parameter (the among-site variance so the df = 5).  The fixed-effect `glm()` fit has a slightly better log-likelihood, but not enough to make up for  9 additional `Site` effect parameters.
+
+So in this case we know there are random effects (i.e. site effects), but we do not want to fit the fixed effects model because we cant afford to the penalty of 9 additional degrees of freedom with little increase in the amount of deviance explained (i.e., delta log likelihood = 3.9).  
+
+So one option that you can explore in this situation is to use `bglmer` from the `blme` package.  This pacakge has a lot of functionality but one of the most useful tools it provides is that it sets a weak prior for the variance to push it away from zero. The default prior that is used is a wishart distribution  (https://en.wikipedia.org/wiki/Wishart_distribution). 
+```{r blmer1}
+require(blme)
+x.blmer <- bglmer(shells~prev+offset(log(Area))+factor(year)+(1|Site),
+      family=poisson,data=Gdat)
+summary(x.blmer)
+```
+Note the first line in the above output provides the description of the Bayesian prior. And we can see that we also now have a positive (but small) estimate of the among-site variance:
+```{r blmer_vc}
+VarCorr(x.blmer)
+```
+
+Now that we have fitted our model and obtained a robust estimate of the random effect standard deviation, we need to check our other assumptions such as overdispersion.  
+
+You can do this by hand `sum(residuals(gmod_lme4_L,"pearson")^2))` or directly from the summary output as we have done in the past, but you can also use the `gof()` function from the `aods3` package (among others). This function provides a handy shortcut (it computes overdispersion based on both the deviance (`D` below) and Pearson residuals (`X2` below). 
+
+This function also provides a p-value statistic-- if you want it-- to give you further guidance about the importance of any observed overdispersion... but as with all p-values you should interpret this with appropriate skepticism.  Sometimes these two ways of estimating overdispersion disagree and when they do  disagree, you should rely on the Pearsons residuals:
+```{r checkdisp}
+require(aods3)
+gof(x.blmer)
+```
+The sum of squared Pearson residuals is less than the residual degrees of freedom, so the response is actually a little under-dispersed. But tis is likely not a problem and the under-dispersion is slight so acceptable. However this assumption will be examined with more rigor below.
+
+
+**More Diagnostics**
+
+Now we need to examine some of the other diagnostics to make sure we are not egregiously violating other assumptions.  For example, we need to make sure that our resdiuals and conditional modes follow expected error distributions.
+
+We can start by doing the standard diagnostic plot -- residuals plots
+```{r g_diag1}
+plot(x.blmer) 
+```
+
+As is often the case, the residuals plot is only marginally useful for a non-gaussian error distribution.  So we cannot glean much from this.  However, it might be useful to see if the residuals have pattern as a function of site.
+
+```{r g_diag2}
+plot(x.blmer,Site~resid(.))
+```
+From this plot, it looks like there may be a little bias in the residuals associated with site.  More of the residuals fall to the left of zero than to the right.  This might suggest that the distribution of the conditional modes needs close inspection.  
+
+The boxplots are really only representing three values per site (i.e., site $\times$ year combinations) and so there is not a lot of resolution for each site. 
+
+To see this more clearly we can use `ggplot` to overlay the individual points on the boxplots. While we're at it, we might as well reorder the `Site` factor to be in order of mean residuals to make it easier to interpret. 
+
+```{r g_diag3}
+ff <- augment(x.blmer)
+ff <- transform(ff,Site=reorder(Site,X=.resid,FUN=mean,sort=sort))
+ggplot(ff,aes(x=Site,y=.resid))+geom_boxplot()+
+    geom_point(size=4,alpha=0.5)+geom_hline(yintercept = 0)+
+    coord_flip()
+```
+
+There seems to be a fair amount of among-site variation, but apparently (at least according to the statistical modeling) this amount of among-site variation is still consistent with Poisson variation among otherwise identical sites ..
+
+
+**What about over/under dispersion**
+We have already checked for over-dispersion, above, and found the residuals to be under- rather than over-dispersed. How can we determine if this amount of deviation  is causing frailty in our model predictions? The steps below will work for situations with either over or under dispersion.
+
+One way is to do *posterior predictive simulations* to test whether the model is behaving like the data in other ways. For example, looking at the distributions of the numbers of zero-shell outcomes in a simulated data set based on the fitted model:
+```{r plotsims}
+sims <- simulate(x.blmer,nsim=1000)
+nzeros <- colSums(sims==0)
+par(las=1,bty="l")
+plot(pt <- prop.table(table(nzeros)),
+     ylab="Probability",xlab="Number of zeros")
+(obszero <- sum(Gdat$shells==0))
+points(obszero,0.13,col="red",pch=16,cex=2)
+```
+
+If we sum up the area under the curve associated with getting a value equal to our observed number of zeros (the red dot) or something more extreme we can get a two-sided $p$-value (if you really want one), testing the hypothesis that the model is behaving as expected (the null):
+```{r simtest}
+sum(pt[names(pt) %in% c(4:9,13:18)])
+```
+We conclude that the model is doing a good job matching this characteristic of the data (i.e., we can't reject the null hypothesis that observed and expected distributions are the same ...)
+
+
+We can easily do this for other characteristics of the data that we were interested in, such as among-site variance. In this case we will use the `glm()` fit to simulate and re-fit, since it's much faster than `glmer()` and suitable for this task:
+
+```{r simvars,cache=TRUE}
+sims2 <- simulate(x1,nsim=1000)
+vfun <- function(x) {
+    m_new <- update(x1,data=transform(Gdat,shells=x))
+    Gdat$.resid <- residuals(m_new,"pearson")
+    sitemeans <- ddply(Gdat,"Site",summarise,mresid=mean(.resid))
+    var(sitemeans$mresid)
+}
+vdist <- sapply(sims2,vfun)
+```
+
+and now plot it out
+```{r comp_vdist}
+Gdat$.glmresid <- residuals(x1,"pearson")
+obs_sitemeans <- ddply(Gdat,"Site",summarise,mresid=mean(.glmresid))
+obs_sitevar <- var(obs_sitemeans$mresid)
+par(las=1,bty="l")
+hist(vdist,breaks=30,col="gray",freq=FALSE,main="",
+     xlab="Among-site variance in residuals")
+par(xpd=NA) ## prevent point getting cut off at top of plot
+points(obs_sitevar,3.1,col="red",pch=16,cex=2)
+```
+**Inference**
+Now that we are satisfied with the performance of our model we need to calculate confidence intervals.  We have 3 options for this. 
+From worst to best:
+
+  1. Wald chi-square tests (e.g. car::Anova)
+  2. Likelihood ratio test (via anova or drop1)
+  3. MCMC or parametric, or nonparametric, bootstrap comparisons (nonparametric bootstrapping must be implemented carefully to account for grouping factors)
+
+However, not all 3 of these options are available for all ways you might estimate the parameters.  For instance, you can only get Wald or Bootstrap CIs for blme, you can get all 3 for glmer, and glmmTMB.  
+
+Here I will compare the the CIs for the blme using both approaches. Later we will compare all the approaches
+
+Here I will compute confidence intervals and compare estimates and CIs across the range of inference approaches. In the code below confidence intervals are calculated using the 2 approaches that we will discuss the pros and cons of in lecture.  Wald and bootstrapped CIs for blme.  This could take a while!
+
+```{r ,cache=TRUE,warning=FALSE}
+CIwald <- confint(x.blmer,method="Wald")
+
+CIboot <- confint(x.blmer,method="boot",quiet=TRUE)
+```
+The code below is just some housekeeping code needed to make the comparison plot at the end...dont worry to much about the next couple of chunks of code.
+```{r}
+simplify_term <- function(x,first=TRUE) {
+    if (first) {
+        gsub(".*\\.([[:alpha:]]+):?.*","\\1",x)
+    } else {
+        gsub(".*[.:]([[:alpha:]]+)$","\\1",x)
+    }
+}
+tfun2 <- function(x) {
+    t1 <- tidy(x,conf.int=TRUE)
+    ## take 'group' (block) but call it 'term'
+    t2 <- t1[,c("term","estimate","conf.low","conf.high")]
+    t2$term <- simplify_term(t2$term,first=FALSE)
+    t2
+}
+```
+
+
+```{r}
+g0 <- tidy(x.blmer,conf.int=TRUE)
+g0$term <- simplify_term(g0$term)
+g1 <- g0[,c("term","estimate","conf.low","conf.high")]
+
+g1_boot <- g1
+g1_boot[,c("conf.low","conf.high")] <- CIboot[c(2:5,1),]
+ff <- function(x,CI) {
+    data.frame(x,CI=CI)
+}
+g2 <- do.call(rbind,mapply(ff,list(g1,g1_boot),
+                           list("Wald","boot"),SIMPLIFY=FALSE))
+g2 <- data.frame(g2,fun="blmer")
+
+
+
+
+gmod_Results <- g2#rbind(g2)
+```
+```{r plotResults,echo=FALSE,warning=FALSE}
+n_ylabs <- with(gmod_Results,length(unique(interaction(CI,fun))))
+ggplot(subset(gmod_Results,term != "(Intercept)"),
+       aes(y=interaction(CI,fun),x=estimate,xmin=conf.low,xmax=conf.high,
+           colour=fun,linetype=CI))+
+    geom_errorbarh(height=0)+
+    geom_point()+
+    facet_wrap(~term,scale="free_x")+
+    geom_vline(xintercept=0,lwd=1,alpha=0.3)+
+    expand_limits(x=0)+
+    scale_y_discrete(labels=rep("",n_ylabs))+
+    labs(x="",y="")
+```
+
+Here you can see that the boot strapped CIs are larger than the Wald CIs.  Becuase the Wald CIs make many simplifying assumptions about the shape of the likelihood surface.  Also-- note the you cannot get CIs on the random effect estimate because it violates the assumptions of Wald (think back to the profile plots of last R tutorial)
+
+Above, each of the parameters is plotted in a separate facet because their scales are somewhat different. 
+
+ **Prediction**
+What if we want to re-plot our original data with predictions about the effect of seroprevalence overlaid?
+
+This code builds upon code we learned back with the R lessons on bootstrapping and permutations. Review that tutorial if you are having trouble here.
+```{r preds}
+pframe <- cbind(expand.grid(year=2004:2006,prev=0:80),Area=1)
+pred <- predict(x.blmer,newdata=pframe,re.form=NA,
+                  type="response")
+```
+
+
+```{r bootpreds,cache=TRUE,warning=FALSE}
+set.seed(101)
+bb <- bootMer(x.blmer,
+              FUN=function(x)
+              predict(x,re.form=NA,newdata=pframe,
+              type="response"),
+              nsim=400)
+```
+
+You would likely want to do more than 400 simulations but this can take a long time on some machines, so I am not doing many bootstraps for demonstration purposes. You would probably want to do at least 1000.
+```{r boot_ci}
+predboot1.CI <- t(sapply(1:nrow(pframe),
+       function(i)
+         boot.ci(bb,type="perc",index=i)$percent[4:5]))
+## or: t(apply(bb$t,2,quantile,c(0.025,0.975),na.rm=TRUE))
+```
+```{r pred1plot}
+pframe2 <- cbind(pframe,shells=pred,
+              setNames(as.data.frame(predboot1.CI),
+                       c("conf.low_boot","conf.high_boot")))
+
+plot_pred2 <- gplot1 + 
+  geom_line(data=pframe2,aes(colour=factor(year)))+
+         geom_ribbon(data=pframe2,
+                     aes(group=factor(year),
+                         ymin=1+conf.low_boot,ymax=1+conf.high_boot),
+                     alpha=0.1)+ggtitle("blmer")
+```
+The confidence intervals are indicated by the shaded envelops from the parametric bootstrap, and here is a publishable figure.
+```{r pred1plotout,fig.width=8}
+plot_pred2
+```
+
+Just for comparison's sake, lets fit this same model using a different library for fitting GLMMs - glmmTMB which stands for GLMM using template model builder.
+
+
+**glmmTMB**
+
+The only thing we have to change for `glmmTMB` is the function call:
+
+```{r gopher_glmmTMB,cache=TRUE}
+library(glmmTMB)
+TMB_L <- glmmTMB(shells~prev+offset(log(Area))+factor(year)+(1|Site),
+      family=poisson,data=Gdat)
+summary(TMB_L)
+```
+Notice that using `glmmTMB` we do get a non=zero but really small random effects variance...much smaller than using bglmer. THis estimate is effectively zero.  
+
+Below you will see I was having some difficulties with bootstrapping the CIs for this.  I will update this code and send to you later.
+
+```{r gmod_confint,cache=TRUE,warning=FALSE}
+CIwald <- confint(TMB_L,method="Wald")
+CIprof <- confint(TMB_L,quiet=TRUE)
+b1 <- lme4::bootMer(TMB_L, FUN=function(x) fixef(x)$cond, nsim=20, .progress="txt")
+if (requireNamespace("boot")) {boot::boot.ci(b1,type="norm")}
+CIboot <- boot::boot.ci(b1,type="norm")
+CIboot
+```
+
+
+```{r}
+#library(tidyr)
+g3 <- tidy(TMB_L,conf.int=TRUE)
+g3$term <- simplify_term(g0$term)
+g4 <- g3[,c("term","estimate","conf.low","conf.high")]
+
+ff <- function(x,CI) {
+    data.frame(x,CI=CI)
+}
+g5 <- do.call(rbind,mapply(ff,list(g4),
+                           list("Wald"),SIMPLIFY=FALSE))
+g5 <- data.frame(g5,fun="glmmTMB")
+
+gmod_Results <- rbind(g2,g5)
+```
+```{r gmod_plotResults,echo=FALSE,warning=FALSE}
+n_ylabs <- with(gmod_Results,length(unique(interaction(CI,fun))))
+ggplot(subset(gmod_Results,term != "(Intercept)"),
+       aes(y=interaction(CI,fun),x=estimate,xmin=conf.low,xmax=conf.high,
+           colour=fun,linetype=CI))+
+    geom_errorbarh(height=0)+
+    geom_point()+
+    facet_wrap(~term,scale="free_x")+
+    geom_vline(xintercept=0,lwd=1,alpha=0.3)+
+    expand_limits(x=0)+
+    scale_y_discrete(labels=rep("",n_ylabs))+
+    labs(x="",y="")
+```
+
+Now you can contrast the CIs for the different models and methods of inference. Notice that the fixed effects estimates are almost identical for all the models, but the RE standard deviation is very different.  You can only get reliable CIs for the RE using the blme approach, in this case. 
+
+ **Prediction**
+
+```{r gmod_pred1}
+pframe <- cbind(expand.grid(year=2004:2006,prev=0:80,Site=Gdat$Site),Area=1)
+pred <- predict(TMB_L,newdata=pframe,re.form=NA,
+                  type="response")
+```
+
+```{r gmod_bootpreds,cache=TRUE,warning=FALSE}
+set.seed(101)
+bb <- bootMer(TMB_L,
+              FUN=function(x)
+              predict(x,re.form=NA,newdata=pframe,
+              type="response"),
+              nsim=400)
+```
+
+You would likely want to do more than 400 simulations but this can take a long time.
+```{r bootci}
+predboot1.CI <- t(sapply(1:nrow(pframe),
+       function(i)
+         boot.ci(bb,type="perc",index=i)$percent[4:5]))
+## or: t(apply(bb$t,2,quantile,c(0.025,0.975),na.rm=TRUE))
+```
+```{r gpred1plot}
+pframe2 <- cbind(pframe,shells=pred,
+              setNames(as.data.frame(predboot1.CI),
+                       c("conf.low_boot","conf.high_boot")))
+
+plot_TMB <- gplot1 + 
+  geom_line(data=pframe2,aes(colour=factor(year)))+
+         geom_ribbon(data=pframe2,
+                     aes(group=factor(year),
+                         ymin=1+conf.low_boot,ymax=1+conf.high_boot),
+                     alpha=0.1)+ggtitle("GlmmTMB")
+```
+The confidence intervals are indicated by the shaded envelops from the parametric bootstrap, and here is a publishable figure.
+```{r gpred1plotout,fig.width=8}
+plot_TMB+theme_bw()
+```
+
+Now lets plot the two final figures side by side for comparison. 
+
+
+```{r,fig.width=8}
+grid.arrange(plot_pred2,plot_TMB,nrow=1)
+```
+

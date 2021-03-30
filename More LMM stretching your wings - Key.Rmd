@@ -1,0 +1,181 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+**Repeatability of a sexual signal trait**
+
+This first data set was extracted from a paper by Griffith and Sheldon (2001, Animal Behaviour 61: 987–993), who measured the white forehead patch of 30 male collared flycatchers in two years on the Swedish island of Gotland. The patch is important in mate attraction, but varies in size from year to year. Our goal here will be to estimate the repeatability of patch length (mm). The data are here.
+
+
+1. Read and examine the data.  Create a plot showing the pair of measurements for each individual flycatcher in the two years of study. Is there evidence of measurement variability between years?
+
+
+*Fit a linear mixed-effects model*
+
+2. Fit a linear mixed-effects model to the data, treating the individual birds as the random groups. Note: The two measurements on each bird were taken in successive years of the study. 
+*For simplicity here, do not include year in the model.* 
+
+3. Extract parameter estimates (coefficients) from the saved lmer() object. Inspect the output for the random effects. What are the two sources of random variation? What does the fixed effect refer to?
+
+4. In the output, examine the standard deviations for the random effects. There should be two standard deviations: one for “(Intercept)” and one for “Residual”. This is because the mixed effects model has two sources of random variation: variation among repeat measurements within birds, and true variation among birds in their patch lengths. Which of these two sources corresponds to “(Intercept)” and which to “Residual”?
+
+5. Also examine the output for the fixed effect results. The only fixed effect in the model formula is the grand mean of all the patch length measurements. It is called “(Intercept)”, but don’t confuse with the intercept for the random effects. The fixed effect output gives you the estimate of the grand mean and a standard error for that estimate. Notice how the fixed effect output provides estimates of means, whereas the random effects output provides estimates of variances (or standard deviations).
+
+6. Extract the variance components from the fitted model and estimate the repeatability of patch length from year to year*.
+
+7. Interpret the measure of repeatability obtained in the previous step. If the repeatability you obtained is less than 1.0, what is the source of the variation among measurements within individuals. Is it measurement error alone?
+
+8. Produce a plot of residuals against fitted values. Notice anything odd? There seems to be a slightly positive trend. This isn’t a mistake, but results from “shrinkage” of the best linear unbiased predictors (BLUPs). 
+
+```{r}
+library(visreg, warn.conflicts=FALSE)
+library(lmerTest, warn.conflicts=FALSE)
+library(ggplot2, warn.conflicts=FALSE)
+library(emmeans, warn.conflicts=FALSE)
+flycat <- read.csv("flycatcher.csv", stringsAsFactors = FALSE)
+head(flycat)
+```
+
+```{r}
+stripchart(patch ~ bird, data = flycat, vertical = TRUE, pch = 16, 
+    cex = 1.5, las = 2, col = "firebrick",
+    xlab = "Individual bird", ylab = "Patch length (mm)")
+
+interaction.plot(response = flycat$patch, x.factor = flycat$year, 
+  trace.factor = flycat$bird, legend = FALSE, lty = 1, xlab = "Year", 
+  ylab = "Patch length (mm)", type = "b", pch = 16, las = 1, cex = 1.5)
+
+ggplot(flycat, aes(y = patch, x = factor(year))) +  
+    geom_point(size = 5, col = "firebrick", alpha = 0.5) + 
+    geom_line(aes(group = bird)) +
+    labs(x = "Year", y = "Patch length (mm)") + 
+    theme_classic()
+```
+
+```{r}
+z <- lmer(patch ~ 1 + (1|bird), data = flycat)
+summary(z)
+
+```
+
+```{r}
+VarCorr(z)
+1.11504^2/(1.11504^2 + 0.59833^2)
+```
+
+```{r}
+plot(z)
+
+library(broom.mixed)
+ff <- augment(z)
+ff <- transform(ff,bird=reorder(bird,X=.resid,  FUN=mean,sort=sort)) 
+ggplot(ff,aes(x=bird,y=.resid))+geom_boxplot()+ geom_point(size=4,alpha=0.5)
+
+```
+
+```{r}
+dataset=flycat
+boot_predict <- function(.) {
+  predict(., newdata=dataset, re.form=NULL)
+}
+
+bootSummary <- function(merBoot) {
+  return(
+    data.frame(fit = apply(merBoot$t, 2, function(x) as.numeric(quantile(x, probs=.5, na.rm=TRUE))),
+               lwr = apply(merBoot$t, 2, function(x) as.numeric(quantile(x, probs=.025, na.rm=TRUE))),
+               upr = apply(merBoot$t, 2, function(x) as.numeric(quantile(x, probs=.975, na.rm=TRUE)))
+    )
+  )
+}
+
+merboot=bootMer(z, boot_predict, nsim=200, use.u=FALSE, type="parametric")
+bootstrap.PIs <- bootSummary(merboot)
+
+pframe=data.frame(dataset,bootstrap.PIs)
+library(dplyr)
+pframe %>%
+  group_by(year) %>%
+  summarise(fit = mean(fit),lwr=mean(lwr),upr=mean(upr)) -> pframe2
+```
+```{r}
+ggplot(data=pframe2,aes(x=as.factor(year), y=fit, ymin=lwr, ymax=upr, color=as.factor(year))) +
+  geom_point(size=4)+
+  geom_errorbar() +
+  labs(x="Predictor/Treatment", y="Response w/ 95% PIs") +
+  theme_bw() +  theme(legend.position="right") +
+  scale_color_brewer(type = "qual", palette = 2)
+```
+
+**Example 2 - Goldie’s vision**
+
+Cronly-Dillon and Muntz (1965; J. Exp. Biol 42: 481-493) used the optomotor response to measure color vision in the goldfish. We looked at these data breifly today in lecture. Here we will fit a model to the data and include the full set of wavelengths tested. Each of 5 fish was tested at all the wavelengths in random order. A large value of sensitivity indicates that the fish can detect a low light intensity. An important feature of the optomotor response is that fish don’t habituate, and it is unlikely that a measurement of visual sensitivity under one wavelength would carry over and have an effect on later measurements at another wavelength. 
+
+
+1. Read and examine the data. Create a graphic to visually explore the data.  What type of experimental design was used? This will determine the linear mixed model to use when fitting the data.
+
+*Fit a linear mixed-effects model*
+
+2. Fit a linear mixed-effects model to the data. 
+**Note:** R will give you the message: “boundary (singular) fit”. What do you think this means? The reason will become clearer as we go along but for now, proceed as though all is well.
+
+3. Plot the fitted (predicted) values. The difference between the predicted and observed values for each fish represent the residuals.
+
+4. What assumptions are you making when fitting this model? Create a plot of residuals against fitted values to check one of these assumptions.
+
+5. Extract parameter estimates from the saved lmer() object. Inspect the results for the fixed effects. The coefficients given have the same interpretation as in the case of a categorical variable analyzed using lm() (arbitrarily, the light treatment “nm426” is set as the “control”).
+    
+6. Inspect the output for the random effects. Once again we have two sources of random error in our mixed effects model. What are they? Which of them corresponds to the (Intercept) and which to the Residual in the output? 
+**Notice** that the estimated standard deviation for one of the sources of variation is very small (or missing) in this data set. This is the reason behind the “boundary (singular) fit” message. It is unlikely that the variance among fish really is zero, but this data set is very small and low variance estimates can occur because of sampling error. Note ignoring this error is not ideal/wrong, but don't worry about it for now.  We will revisit this and discuss possible solutions later in the semesters.
+
+7. Generate the model-based estimates of the mean sensitivities for each wavelength.
+
+8. Are their differences among wavelengths significant? Generate the ANOVA table for the lmer() object. What effects are tested here, the random effects or the fixed effects?*** Interpret the ANOVA results.
+
+
+```{r}
+
+x <- read.csv("goldfish.csv",  stringsAsFactors = FALSE)
+head(x)
+
+```
+```{r}
+ggplot(data = x, aes(y = sensitivity, x = wavelength, color = fish))+
+  stat_sum(aes(colour=fish, size=factor(..n..)))+
+  geom_line(aes(group=fish))+
+  labs(x = "Treatment", y = "log phenolics concentration") +theme_classic()
+```
+
+```{r}
+z <- lmer(sensitivity ~ wavelength + (1|fish), data = x)
+
+```
+```{r}
+visreg(z, xvar = "wavelength", by = "fish", scales = list(rot = 90))
+```
+
+```{r}
+plot(z)
+```
+```{r}
+summary(z)
+```
+```{r}
+z.=emmeans(z, "wavelength", data = x)
+```
+
+```{r}
+anova(z)
+library(car)
+Anova(z)
+```
+
+```{r}
+
+ggplot(data = as.data.frame(z.), aes(y = emmean, x = wavelength,ymin=lower.CL,ymax=upper.CL))+
+  geom_point(size=3)+
+  geom_errorbar()+
+   labs(x = "Wavelength", y = "Sensensitivity") +theme_classic()
+```
+```
+
