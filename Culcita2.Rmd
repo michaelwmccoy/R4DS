@@ -43,7 +43,7 @@ library("numDeriv")
 
 ## *Culcita*
 
-The data are from ECU almunus McKeon *et al*. 2012 "Multiple defender effects: synergistic coral defense by mutualist crustaceans" *Oecologia*, 169(4):1095-1103. 
+The data are from ECU alumnus McKeon *et al*. 2012 "Multiple defender effects: synergistic coral defense by mutualist crustaceans" *Oecologia*, 169(4):1095-1103. 
 
 ### Data exploration
 
@@ -80,7 +80,7 @@ ggplot(culcita_dat,aes(x=ttt,y=predation,colour=block,group=block))+
 
 **Fitting**
 
-First, the model will be analysed using glmer and then later other approaches will be demonstrated.
+First, the model will be analyzed using glmer and then later other approaches will be demonstrated.
 
 *lme4::glmer*
 
@@ -121,16 +121,17 @@ The output from the model fit above and the summary statistics also indications 
 summary(lme4_block2)
 ```
 
-While often not useful for GLMER, it is still a good idea to look at residuals plots becuase they can sometimes be informative with regards to the structure of the data.
+While often not useful for GLMER, it is still a good idea to look at residuals plots because they can sometimes be informative with regards to the structure of the data.
 Diagnostic plots:
 ```{r cmod_lme4_L_diagplot,fig.width=8}
 p1 <- plot(lme4_block2,id=0.05,idLabels=~.obs)  ##note the argument here
 p2 <- plot(lme4_block2,ylim=c(-1.5,1),type=c("p","smooth"))
 grid.arrange(p1,p2,nrow=1)
 ```
-The only thing that the default (left-hand) diagnostic plot tells us is that observation #20 has a (very) extreme residual (we use `idLabels=~.obs` to get outliers labelled by their observation number; otherwise, by default, they are labelled by their groups); if we use `ylim=c(-1.5,1)` to limit the $y$-range, we get (on the right) the usual not-very-informative residuals plot expected from binary data. However, this right hand plot does provide us some iformation with regards to the seperation of points along the fitted model axis. Specifically very little to no overlap of negative and positive residuals is a sign of possible bias due to complete seperation.
+The only thing that the default (left-hand) diagnostic plot tells us is that observation #20 has a (very) extreme residual (we use `idLabels=~.obs` to get outliers labeled by their observation number; otherwise, by default, they are labeled by their groups); if we use `ylim=c(-1.5,1)` to limit the $y$-range, we get (on the right) the usual not-very-informative residuals plot expected from binary data. However, this right hand plot does provide us some information with regards to the separation of points along the fitted model axis. Specifically very little to no overlap of negative and positive residuals is a sign of possible bias due to complete separation.
 
 **Digression: complete separation**
+I am going to use this for demonstration of how to deal with complete separation...we will come back to the full data set later on to see the complete analysis.
 
 If we exclude observation 20, we see the symptoms of [complete separation]
 https://stats.idre.ucla.edu/other/mult-pkg/faq/general/faqwhat-is-complete-or-quasi-complete-separation-in-logistic-regression-and-what-are-some-strategies-to-deal-with-the-issue/
@@ -148,9 +149,10 @@ One solution for this is to use  `bglmer` from the `blme` package to impose zero
 blme_L2 <- bglmer(predation~ttt+(ttt|block),data=newdat,
                        family=binomial,
                        fixef.prior = normal(cov = diag(9,4)))
+summary(blme_L2)
 ```
 
-Neither of these methods (bglmer or glmer) give satisfying solutions. We can see that the estimates are still quite large, the CI unreliable, and the radomeffects estimates are still large and have strong correlations.  All of this still suggesting we are over parameterized...and so can not resolve the model fitting process.
+Neither of these methods (bglmer or glmer) give satisfying solutions. We can see that the estimates are still quite large, the CI unreliable, and the random effects estimates are still large and have strong correlations.  All of this still suggesting we are over parameterized...and so can not resolve the model fitting process.
 ```{r}
 
 dotwhisker::dwplot(lme4_block3,effects="fixed",by_2sd=FALSE)
@@ -180,10 +182,10 @@ summary(blme_L3)
 summary(lme4_L2)
 
 ```
-If you convert these estimates back to the orignial scale (propotion depredated) using hte inverse link for the logit (plogis) you can see that the bglmer estimates more closely match what we observed with our original summary plots.
+If you convert these estimates back to the original scale (proportion depredated) using the inverse link for the logit (plogis) you can see that the bglmer estimates more closely match what we observed with our original summary plots.
 ```{r}
 plogis(fixef(blme_L3))
-plogis(fixef(lme_L2))
+plogis(fixef(lme4_L2))
 ```
 
 And in the confidence intervals.
@@ -197,13 +199,13 @@ t_blme_CI_boot <- system.time(
 
 **End of digression**
 
-Now lets go all the way back to the beginning.  Another approach after finding that the random slopes and intercept model experienced some techinical difficulties associated with over parameterization, would have been to drop the randome intercepts term from the start.  Lets lets take that route. 
+Now lets go all the way back to the beginning.  Another approach after finding that the random slopes and intercept model experienced some technical difficulties associated with over parameterization, would have been to drop the random intercepts term from the start.  Lets take that route. 
 ```{r}
 lme4_L=glmer(predation~ttt+(1|block),data=culcita_dat,
                        family=binomial)
 summary(lme4_L)
 ```
-Now, with the full data set (i.e. outlier included) we get reasonable estiamtes of our parameters (not great than 10) and random effect.   
+Now, with the full data set (i.e. outlier included) we get reasonable estimates of our parameters (not greater than 10) and stable random effects estimates.   
 
 Lets examine the residuals of this model.
 
@@ -212,7 +214,7 @@ p1 <- plot(lme4_L,id=0.05,idLabels=~.obs)  ##note the argument here
 p2 <- plot(lme4_L,ylim=c(-1.5,1),type=c("p","smooth"))
 grid.arrange(p1,p2,nrow=1)
 ```
-The outlier still appears to be an outlier (not surprising)...but not clear if it is affecting model fit (i.e. compelte separation problems not present when it is included).
+The outlier still appears to be an outlier (not surprising)...but not clear if it is affecting model fit (i.e. complete separation problems not present when it is included).
 
 It may be easier to get a better view of the residuals pattern with boxplots grouped by treatment (again limiting the range to exclude the outlier).
 
@@ -224,7 +226,7 @@ Check the random effects...here is a different set of code to generate a conditi
 ```{r cmod_ranef}
 dotplot(ranef(lme4_L,condVar=TRUE))
 ```
-There are only a few unique values of the random effects because there are only a few possible configurations per block of predation/no-predation in each treatment.
+There are only a few unique values of the random effects because there are only a few possible configurations per block of predator/no-predator in each treatment.
 
 It's worth checking `methods(class="merMod")` to see all the things you can do with the fit (some of them may be a bit obscure ...)
 The most important are:
@@ -260,7 +262,7 @@ t_lme4_CI_quad <- system.time(
 t_lme4_CI_boot <- system.time(
   lme4_L_CI_boot <- confint(lme4_L,method="boot"))
 ```
-You can see the differences in computational time redquired for these different methods illuatrating the accuracy computation tradeoff
+You can see the differences in computational time required for these different methods illustrating the accuracy computation takeoff
 ```{r}
 t_lme4_CI_quad; t_lme4_prof; t_lme4_CI_boot
 ```
@@ -314,7 +316,7 @@ ggplot(subset(gmod_Results,term != "(Intercept)"),
     labs(x="",y="")
 ```
 
-In the plot above the estimates are the same for the fixed and random effects.  But there are quite substantial differences in the CIs depending on which method selected.  The Bootstrap CIs are likely so much different becuase of the effects of the oiutlier on some bootstrap iterations.
+In the plot above the estimates are the same for the fixed and random effects.  But there are quite substantial differences in the CIs depending on which method selected.  The Bootstrap CIs are likely so much different because of the effects of the outlier on some bootstrap iterations.
 
 ### Model comparison/hypothesis testing
 
@@ -331,7 +333,7 @@ anova(lme4_L,lme4_H0)
 
 Note: could also use `drop1(cmod_lme4_L,test="Chisq")` to refit the reduced model automatically (helpful if we have a more complex model with more separate fixed effects to test).
 
-Alternative is to get parametric bootstrap confidence intervals by defining a parametric bootstrap function which tests as part of the bootstrap fitting process to make sure that  the refitting steps do not fail by chance. The below simulation code simulates generating the Null model and the alternative model (the resampling) and then calculate in the last line the likelihood ratio test.
+Alternative is to get parametric bootstrap confidence intervals by defining a parametric bootstrap function which tests as part of the bootstrap fitting process to make sure that  the refitting steps do not fail by chance. The below simulation code simulates generating the Null model and the alternative model (the re-sampling) and then calculate in the last line the likelihood ratio test.
 
 ```{r }
 PBsimfun <- function(m0,m1,x=NULL) {
@@ -344,7 +346,7 @@ PBsimfun <- function(m0,m1,x=NULL) {
 }
 ```
 
-Now we can replciate the above simulationa  bunch of times and get the distribution of the likelihood ratios..if the two models explain the same amount of deviance the LR will most often be zero, if one accounts for more of the vaiance the value will deviate from zero. In this case  only 400 sims will be run because it can take a long time.
+Now we can replicate the above simulations  bunch of times and get the distribution of the likelihood ratios..if the two models explain the same amount of deviance the LR will most often be zero, if one accounts for more of the variance the value will deviate from zero. In this case  only 400 sims will be run because it can take a long time.
 ⌛ 
 ```{r pbcmodcomp,cache=TRUE,warning=FALSE}
 set.seed(101)
@@ -390,7 +392,7 @@ invcontr <- matrix(c(1,0,0,0, #Control
                    dimnames=list(c("none","symbiont",
                    "C_vs_S","1_vs_2"),
               levels(culcita_dat$ttt))) 
-invcontr ##compare these contrasts to teh goals above
+invcontr ##compare these contrasts to the goals above
 cmat0 <- solve(invcontr)[,-1]
 ```
 
@@ -402,7 +404,7 @@ X <- model.matrix(~ttt,
                   contrasts=list(ttt=cmat0))
 X
 ```
-Now create a data frame that includes our design (dummy variables) and the colums of interest from the original data set (block, predation).
+Now create a data frame that includes our design (dummy variables) and the columns of interest from the original data set (block, predation).
 ```{r }
 
 culcita_dat2 <- with(culcita_dat,data.frame(block,predation,
@@ -697,7 +699,7 @@ v0 + geom_violin(fill="gray") +
 The modes of the `MCMCglmm` results (the fattest part of the "violins") agree well with the `lme4` MLEs, for the most part: the `lme4` estimate of the among-block standard deviation is a bit lower than the `MCMCglmm` estimate. (When we display the overall parameter comparison below, we will show the MCMCglmm means instead.)
 
 
-Okay, so you have just seen a lot of different approaches and pathways of decision making that one could reasonably take (e.g. include or exclude slope random effect, include or exclude outlier, use lme4 or glmmTMB or different Bayesian appoaches including the pseudobayesian blme or fully bayesian MCMCglmm).  In addition, different methods for estimating CIs and inference have been examined. What are the implications of these  different decisions.
+Okay, so you have just seen a lot of different approaches and pathways of decision making that one could reasonably take (e.g. include or exclude slope random effect, include or exclude outlier, use lme4 or glmmTMB or different Bayesian approaches including the pseudobayesian blme or fully bayesian MCMCglmm).  In addition, different methods for estimating CIs and inference have been examined. What are the implications of these  different decisions.
 ```{r assemble_cmod,echo=FALSE}
 c1 <- tfun2(lme4_L)
 c1_prof <- c1
@@ -764,7 +766,7 @@ gg_cmodres <- ggplot(cmod_Results,aes(x=term,y=estimate,
 gg_cmodres
 ```
 
-Hoepfully you will find it reassureing that the parameter estimates and confidence intervals are reasonably consistent across packages and algorithms.
+Hopefully you will find it reassuring that the parameter estimates and confidence intervals are reasonably consistent across packages and algorithms.
 
 * `glmer` and `glmmTMB` give the same point estimates -- reassuringly, since they are both using (different implementations of) the Laplace approximation method. `MCMCglmm` gives slightly lower (= more negative) estimates of the point estimates, and higher estimates of the among-block standard deviation; this is in part because `MCMCglmm` is reporting the posterior mean, which for a distribution with a long right tail is larger than the posterior mode (analogous to the maximum likelihood estimate).
 
