@@ -1,0 +1,388 @@
+---
+title: "Zero Inflated Data"
+output: html_notebook
+---
+
+To demonstrate fitting zero-inflated GLMMs, we we will analyse counts of begging behaviors by owl nestlings. This example previously appeared in Zuur et al. (2009) and Bolker et al. (2013, 2017) and was originally published by Roulin & Bersier (2007). In this turtorial you will fit zero-inflated Poisson models with five fixed effects, an offset term, and one random effect. You will fit the model allowing zero-inflation to vary with food treatment and vary randomly with nest.
+
+
+```{r}
+#library(tidyverse)
+library("glmmTMB")
+library("bbmle")## for AICtab
+library("ggplot2")
+library(broom)
+library(broom.mixed)
+
+require(aods3)
+## cosmetic
+theme_set(theme_bw()+theme(panel.spacing=grid::unit(0,"lines")))
+```
+
+The response variable in this example is the number of calls from chicks (NCalls) in a nest. Since the total number of calls is expected to scale with the number of chicks (i.e. brood size),log(BroodSize) is used as an offset term. In addtiion, becuase individual nests were repeatedly sampled, Nest is included as a random effect (random intercept). Covariates of interest include the sex of the parent visiting the nest (SexParent), whether the chicks were satiatited or not (FoodTreatment), and the timing of the parent’s arrival (ArrivalTime).
+
+First Load the Data
+```{r}
+data(Owls)
+str(Owls)
+```
+Okay, we will perform a handful of data modifications to make it easier to work with changing column names and to make plots nicer (reordering).  
+
+```{r}
+Owls <- transform(Owls,Nest=reorder(Nest,SiblingNegotiation),
+                       NCalls=SiblingNegotiation,
+                       FT=FoodTreatment)
+str(Owls)
+```
+
+As we should always do, we will start by making some plots to visualize the data.  Here I will use lattice graphics rather than ggplot.  They can sometimes be useful and faster than ggplot for non publication targeted graphics. Here demonstrating both box and whiskers and dot plots.
+
+```{r}
+library(lattice)
+bwplot(reorder(Nest,NCalls)~NCalls|FT:SexParent,
+       data=Owls)
+dotplot(reorder(Nest,NCalls)~NCalls|FT:SexParent,
+       data=Owls)
+```
+##CHALLENGE##
+The Above plots were created with Lattice.  Can you remake one of these plots with ggplot?
+
+##End##
+
+For our initial model fitting we need to consider a few things...In order to fit any generalized mixed model you first need to:
+  1. specify a model for the conditional effects, in the standard R (Wilkinson-Rogers) formula notation 
+  2. specify a model for the random effects.  Random effects are specified as x|g,where x is an effect and g is a grouping factor (which must be a fac-tor variable,  or a nesting of/interaction among factor variables).  
+  3. choose  the  error  distribution  by  specifying  the  family  (family argument).  
+  
+In this example, we know we are dealing with count data (number of calls). Therefore we will assume a Poisson distribtuion. However, we also know that each nest has different amounts of sampling per unit time (more chicks more expected calls) so we also need to scale the number of calls by using an offset. 
+
+```{r}
+g1 <- glmer(NCalls~FT*SexParent+offset(logBroodSize)+
+            (1|Nest),family=poisson,data=Owls)
+print(summary(g1))
+```
+
+Next we quickly examine the output, and to me everything looks reasonable.  But we need to do diagnostics.  I check for (in this order) - Singularity, Overdispersion, resdiuals plots.
+
+We do not have an issue of singularity so we need to check the dispersion assumption. Here I calcualte it manually for demonstration and using the gof function in aods3.
+```{r}
+gof(g1)
+
+##now manually
+rdev <- sum(residuals(g1)^2)
+mdf <- length(fixef(g1))
+rdf <- nrow(Owls)-mdf  ##  residual df [NOT accounting for random effects]
+rdev/rdf
+prob.disp <- pchisq(rdev,rdf,lower.tail=FALSE,log.p=TRUE)
+round(prob.disp/log(10))
+```
+
+Uh oh. This reveals that their is much greater dispersion than expected. Almost 6 fold higher dispersion. And if we extract the pvalue we can see that the probability of getting this level of dispersion from a true Poisson process is rather unlikely p~10^-388!  
+
+So we need to try to accommodate this extra variance.  One potential solution would be to add an OLRE, which allows per-observation random effect.
+
+```{r}
+library(lme4)
+Owls$obs <- 1:nrow(Owls) ## add observation number to data
+g2 <- glmer(NCalls~FT*SexParent+offset(logBroodSize)+
+            (1|Nest)+(1|obs),family=poisson,data=Owls)
+print(summary(g2))
+```
+
+Now we get some warnings that suggest we have some numerical instability and so our model fits may be dubious.  Therefore, we should not base any inferences on these results due to failed convergence.  We dont have any vairables to rescale so that will not solve our problems. 
+
+Lets look at some diagnostic plots to see if that gives any hints.
+
+```{r}
+plot(fitted(g2),residuals(g2))
+rvec <- seq(0,30,length=101)
+lines(rvec,predict(loess(residuals(g2)~fitted(g2)),newdata=rvec),
+      col=2,lwd=2)
+abline(h=0,col="gray")
+```
+##CHALLENGE##
+The Above plot was created with base R.  Can you remake this plot with ggplot?
+
+##end##
+
+For demonstration purposes only... Lets proceed with this example as though the plot of residuals had not revealed
+a problem with the model. Then we will take the propoer route and analyse these data with a zero inflated model for comparison.
+
+```{r}
+G0 <- ggplot(Owls,aes(x=reorder(Nest,NCalls),
+                      y=NCalls))+
+  xlab("Nest")+ylab("Negotiations per chick")+coord_flip()+
+  facet_grid(FT~SexParent)
+## boxplot display
+G1 <- G0+ geom_boxplot()
+## dotplot display (I prefer this one)
+G2 <- G0+stat_sum(aes(size=factor(..n..)),alpha=0.5)+
+  theme_bw()
+```
+
+Generate Preidictions
+We'll do it by hand. (For nest size=1 we have offset=0 so prediction will produces negotations/chick.)
+
+```{r}
+## set up prediction frame
+pframe0 <- with(Owls,expand.grid(SexParent=levels(SexParent),
+                                FT=levels(FT)))
+## construct model matrix
+mm <- model.matrix(~FT*SexParent,data=pframe0)
+## predictions from each model; first construct linear
+##  predictor, then transform to raw scale
+pframe1 <- data.frame(pframe0,eta=mm%*%fixef(g1))
+pframe1 <- with(pframe1,data.frame(pframe1,NCalls=exp(eta)))
+pframe2 <- data.frame(pframe0,eta=mm%*%fixef(g2))
+pframe2 <- with(pframe2,data.frame(pframe2,NCalls=exp(eta)))
+```
+
+We are using exp(eta)  (and analogous code below) because we have used the default log link for the Poisson model.  In general we will use the inverse-link function {plogis} for logit link, the default for binomial data).
+
+Confidence intervals:
+we already have the model matrix $X$ for the points we want to predict, so we just need $XVX^T$ to compute the per-point variances:
+```{r}
+pvar1 <- diag(mm %*% tcrossprod(vcov(g1),mm))
+pvar2 <- diag(mm %*% tcrossprod(vcov(g2),mm))
+```
+Add the variance due to among-nest variation. (This is intercept variation only, so we can just add the variance.  If the among-nest variation affected more than the intercept, we would have to set up a design matrix and do a similar calculation to the one above.)
+```{r}
+
+tvar1 <- pvar1+VarCorr(g1)$Nest
+tvar2 <- pvar2+VarCorr(g2)$Nest
+```
+
+Attach standard errors, and computed confidence intervals, to prediction frames:
+```{r}
+pframe1 <- data.frame(pframe1,pse=sqrt(pvar1),tse=sqrt(tvar1))
+pframe1 <- with(pframe1,
+                data.frame(pframe1,
+                           plo=exp(eta-1.96*pse),
+                           phi=exp(eta+1.96*pse),
+                           tlo=exp(eta-1.96*tse),
+                           thi=exp(eta+1.96*tse)))
+pframe2 <- data.frame(pframe2,pse=sqrt(pvar2),tse=sqrt(tvar2))
+pframe2 <- with(pframe2,
+                data.frame(pframe2,
+                           plo=exp(eta-1.96*pse),
+                           phi=exp(eta+1.96*pse),
+                           tlo=exp(eta-1.96*tse),
+                           thi=exp(eta+1.96*tse)))
+```
+
+
+Basing confidence limits on  1.96* sigma  may be a little anticonservative in the finite distribution.
+
+Plot the results.
+Here I am plotting the  predicted values for both models, as well as confidence intervals based on estimates of parameter error plus among-nest variance  ({tlo} and {thi}). These are the confidence intervals on the means of  a randomly selected nest in each category. I would use {plo} and {phi} to compute the confidence interval on the mean of an ``average'' nest, nest (i.e. not incorporating among-nest variation).  
+```{r}
+print(G2 + 
+      geom_hline(data=pframe1,aes(yintercept=NCalls),col="red")+
+      geom_hline(data=pframe2,aes(yintercept=NCalls),col="blue")+
+      geom_rect(aes(xmin=0,xmax=28,ymin=tlo,ymax=thi,x=NULL),
+                data=pframe1,fill="red",alpha=0.3)+
+      geom_rect(aes(xmin=0,xmax=28,ymin=tlo,ymax=thi,x=NULL),
+                data=pframe2,fill="blue",alpha=0.3))
+```
+
+You can see there is a little difference in the estimates of the model that includes OLRE and the standard Mixed model.  However, as we saw with he residuals plots these are still biased because we have not dealt with zero inflation and so the data are still over dispersed. So now lets run a zero inflated analysis.
+
+**The basic glmmTMBfit for Zero inflated Dsitributions** 
+
+For a zero-inflated Poisson model with a single zero-inflation parameter applying to all observations you must add the argument (ziformula~1) (Excluding zero-inflation is glmmTMB’s default: to exclude it explicitly, use ziformula~0).
+
+```{r}
+fit_zipoisson <- glmmTMB(NCalls~(FT+ArrivalTime)*SexParent+offset(log(BroodSize))+(1|Nest),data=Owls,ziformula=~1,family=poisson)
+summary(fit_zipoisson)
+```
+
+We  can  also  try  a  standard  zero-inflated  negative  binomial  model.   The default  is  the  “NB2”  parameterization  (variance  =μ(1 +μ/k).  
+
+```{r}
+fit_zinbinom <- update(fit_zipoisson,family=nbinom2)
+```
+
+Alternatively, we can use an “NB1” fit (variance =φμ).
+
+```{r}
+fit_zinbinom1 <- update(fit_zipoisson,family=nbinom1)
+```
+
+We might also want to fit a model where we relax the assumption that the total number of calls is strictly proportional to brood size. In other words we may want to remove log(brood size) as an offset. 
+
+Relax the assumption that total number of calls is strictly proportionalto brood size (i.e.  using log(brood size) as an offset)
+
+```{r}
+fit_zinbinom1_bs <- update(fit_zinbinom1,. ~ (FT+ArrivalTime)*SexParent+BroodSize+(1|Nest))
+```
+
+Lets compare these models 
+
+```{r}
+AICtab(fit_zipoisson,fit_zinbinom,fit_zinbinom1,fit_zinbinom1_bs)
+```
+
+Now it is apparent that every change we have made so far to the models we are fitting have consierable affects on the qualit of the fits. 
+For instance, we can see that changing the distributions improves it the fit enormously, while changing the role of brood size makes only a modest (-1 AIC unit) difference.
+
+**Hurdle Model**
+Finally we will fit one more type of model to be completely thorough.   In contrast to zero-inflated models, hurdle models treat zero-count and non-zero  outcomes  as  two  completely  separate  categories,  rather  than  treating the zero-count outcomes as a mixture of structural and sampling zeros. glmmTMB includes  truncated  Poisson  and  negative  binomial  familes  and hence can fit hurdle models. 
+
+```{r}
+fit_hnbinom1 <-  update(fit_zinbinom1_bs,ziformula=~.,data=Owls,family=truncated_nbinom1(link="log"))
+```
+
+Then we can use AICtab agan to compare all the models.
+
+```{r}
+AICtab(fit_zipoisson,fit_zinbinom,fit_zinbinom1,fit_zinbinom1_bs,fit_hnbinom1)
+```
+
+**Challenge**
+
+Generate a final plot of the fitted model to the data.  And contrast the results inference based on this model versus the standard Poisson glmms plotted earlier.
+
+
+```{r}
+temp =predict(fit_hnbinom1, se.fit=TRUE, zitype="response")
+Owls$predFE = temp$fit
+Owls$predFE.min = temp$fit-1.98*temp$se.fit
+Owls$predFE.max = temp$fit+1.98*temp$se.fit
+pred=ddply(Owls, ~FT+SexParent, summarize, m=mean(NCalls))
+pred.ci.lo=ddply(Owls, ~FT+SexParent, summarize, m=mean(predFE.min))
+pred.ci.hi=ddply(Owls, ~FT+SexParent, summarize, m=mean(predFE.max))
+preds=data.frame(pred,pred.ci.lo,pred.ci.hi)
+
+ggplot(Owls,aes(x=reorder(Nest,NCalls),y=NCalls))+
+    xlab("Nests")+ylab("Negotiations per chick")+coord_flip()+
+    facet_grid(FT~SexParent)+
+    stat_sum(aes(size=factor(..n..)),alpha=0.5)+
+    theme_bw()+
+      geom_hline(data=preds,aes(yintercept=m),col="red")+
+  geom_hline(data=preds,aes(yintercept=m.1),col="red",linetype="dashed")+
+  geom_hline(data=preds,aes(yintercept=m.2),col="red",linetype="dashed")
+      
+```
+
+
+**Part 2 Salamanders - From Brooks 2017**
+repeated samples of salamanders were taken at 23 sites. Some of the sites were affected by mountain top removal coal mining. The data was originally published in Price et al. (2016) and was acquired from Dryad (Price et al. (2015))
+
+```{r}
+data(Salamanders)
+head(Salamanders)
+```
+
+```{r}
+Salamanders = transform(Salamanders, present =as.numeric(count>0))
+```
+
+**Challegne Draw Histogram to explore data structure**
+Make for these count data split into separate panels for each species or lifestage. Each panel should contain two overlaid histograms in which color represents whether the site affected by mining or not.
+
+Can you see the potential zero inflation?
+**End**
+
+
+
+Now we will fit the set of canditate models which includes a model that only accounts for species, one that has an additive affect of mining and one with an interaction.
+
+We will fit the models assuming poisson:
+```{r}
+pm0 =glmmTMB(count~spp + (1|site), Salamanders, family=poisson)
+pm1 =glmmTMB(count~spp + mined + (1|site), Salamanders, family=poisson)
+pm2 =glmmTMB(count~spp * mined + (1|site), Salamanders, family=poisson)
+```
+
+And Negative Binomial
+```{r}
+nbm0 =glmmTMB(count~spp + (1|site), Salamanders, family=nbinom2)
+nbm1 =glmmTMB(count~spp + mined + (1|site), Salamanders, family=nbinom2)
+nbm2 =glmmTMB(count~spp * mined + (1|site), Salamanders, family=nbinom2)
+```
+
+Unlike the Poisson, the negative binomial distribution has a dispersion parameter. If we expected the countsto become more dispersed (relative to the mean) as the year progresses, then we could use the dispersion formula to model how the dispersion changes with the day of the year (DOY) using disp=~DOY.
+
+```{r}
+nbdm0 =glmmTMB(count~spp + (1|site), disp=~DOY, Salamanders, family=nbinom2)
+nbdm1 =glmmTMB(count~spp + mined + (1|site), disp=~DOY, Salamanders, family=nbinom2)
+nbdm2 =glmmTMB(count~spp * mined + (1|site), disp=~DOY, Salamanders, family=nbinom2)
+```
+
+**Zero-inflated models**
+
+To fit zero-inflated models, we use the zi formula argument, or glmmTMB will also recognize zi. This is a formula that describes how the probability of an extra zero (i.e. structural zero) will vary with predictors. In this example, we might assume that absences will at least vary by species (spp), so we write zi= ~spp. This formula only has a right side because the left side is always the probability of having a structural zero inthe response that was specified in the first formula. The zero-inflation probability is always modeled with a logit-link to keep it between 0 and 1.
+
+```{r}
+zipm0 =glmmTMB(count~spp +(1|site), zi=~spp, Salamanders, family=poisson)
+zipm1 =glmmTMB(count~spp + mined +(1|site), zi=~spp, Salamanders, family=poisson)
+zipm2 =glmmTMB(count~spp + mined +(1|site), zi=~spp + mined, Salamanders, family=poisson)
+zipm3 =glmmTMB(count~spp * mined +(1|site), zi=~spp * mined, Salamanders, family=poisson)
+
+```
+
+```{r}
+zinbm0 =glmmTMB(count~spp +(1|site), zi=~spp, Salamanders, family=nbinom2)
+zinbm1 =glmmTMB(count~spp + mined +(1|site), zi=~spp, Salamanders, family=nbinom2)
+zinbm2 =glmmTMB(count~spp + mined +(1|site), zi=~spp + mined, Salamanders, family=nbinom2)
+zinbm3 =glmmTMB(count~spp * mined +(1|site), zi=~spp * mined, Salamanders, family=nbinom2)
+```
+
+The warning messages tell us that zinbm0 and zinbm1 did not converge. However, the models with mined as a predictor of zero-inflation did converege. So we will proceed without trying to trouble shoot those models.
+
+**Hurdle models**
+
+We can also fit hurdle models in a single model by using a truncated distribution for the conditional modeland adding zero-inflation.
+
+```{r}
+hpm0 =glmmTMB(count~spp + (1|site), zi=~spp, Salamanders, family=truncated_poisson)
+hpm1 =glmmTMB(count~spp + mined + (1|site), zi=~spp + mined, Salamanders,family=truncated_poisson)
+hpm2 =glmmTMB(count~spp * mined + (1|site), zi=~spp + mined, Salamanders,family=truncated_poisson)
+hnbm0 =glmmTMB(count~spp + (1|site), zi=~spp, Salamanders, family=truncated_nbinom2)
+hnbm1 =glmmTMB(count~spp + mined + (1|site), zi=~spp + mined, Salamanders,family=truncated_nbinom2)
+hnbm2 =glmmTMB(count~spp * mined + (1|site), zi=~spp + mined, Salamanders,family=truncated_nbinom2)
+```
+
+**Compare all models using AIC**
+```{r}
+AICtab(pm0, pm1, pm2,nbm0, nbm1, nbm2,
+       nbdm0, nbdm1, nbdm2,
+       zipm0, zipm1, zipm2, zipm3,
+       zinbm0, zinbm1, zinbm2, zinbm3,
+       hpm0, hpm1, hpm2,hnbm0, hnbm1, hnbm2)
+```
+
+The most parsimonious model has a negative binomial distribution with effects of species, mining, and their interaction.
+
+**Model summary**
+
+The summary of the negative binomial GLMM is similar to the familiar output from glmer, so lets output the summary from a more complicated model below to demonstrate output from zero-inflation and dispersion models.
+```{r}
+summary(nbm2)
+summary(glmmTMB(count~spp+mined+(1|site), zi=~spp+mined , disp=~DOY, Salamanders, family=nbinom2))
+```
+
+This summary can be broken down into five sections. 
+The top section is a general overview containing adescription of the model specification (Family,Formula,Zero inflation,Dispersion,Data) and resulting information criteria. The information criteria are only meaningful in comparison to other models fit by glmmTMB-- this is because glmmTMB does not drop any constants from the likelihood while some other packages do. 
+
+The second section describes the variability of the Random effects. In this model, we only had random effects on the conditional model, but random effects from the zero-inflation model could also appear here. 
+
+The third section describes the coefficients of the Conditional model including Wald z statistics and p-values. Apart from the intercept, the estimates are all contrasts as is standard in regression models. This model has a log link as stated in the top line of the summary. 
+
+The fourth section describes the Zero-inflation model similarly to the Conditional model except that this model has a logit-link. The zero-inflation model estimates the probability of an extra zero such that a positive contrast indicates a higher chance of absence (e.g.mined no < 0 means fewer absences in sites unafected by mining); this is the opposite of the conditional model where a positive contrast indicates a higher abundance (e.g.,mined no > 0 means higher abundances in sites unafected by mining). 
+
+The last section describes the Dispersion model, which uses a log link to keep the dispersion parameter positive. This is in contrast to the summary of nbm2 above, where there is no dispersion model and the overdispersion parameter is reported on the natural (rather than log) scale.
+
+**Simple Plot**
+It’s easiest to see the pattern by using the predict function. To avoid marginalizing over or conditioning on random effects, we can refit the best model without the random effect of site; however, this is not ideal because it ignores the correlation within sites. We present a more rigorous version next. The predict function has a parameter zi type that specifies whether you want predictions from the conditional model, the zero-inflation model, or the expected response that combines both parts of the model. 
+```{r}
+library(plyr)
+zinbm3FE =glmmTMB(count~spp * mined, zi=~spp * mined, Salamanders, family=nbinom2)
+newdata =unique(Salamanders[,c("mined","spp")])
+temp =predict(zinbm3FE, newdata, se.fit=TRUE, zitype="response")
+newdata$predFE = temp$fit
+newdata$predFE.min = temp$fit-1.98*temp$se.fit
+newdata$predFE.max = temp$fit+1.98*temp$se.fit
+real=ddply(Salamanders, ~site+spp+mined, summarize, m=mean(count))
+ggplot(newdata,aes(spp, predFE, colour=mined))+geom_point()+geom_errorbar(aes(ymin=predFE.min, ymax=predFE.max))+geom_point(data=real,aes(x=spp, y=m) )+ylab("Average abundance \n including presences and absences")+xlab("Species")
+```

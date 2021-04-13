@@ -1,0 +1,451 @@
+---
+title: "GLMM example when levels of varaince is the focus"
+author: "Michael McCoy - Modified from Bolker (2015)"
+date:
+output: 
+---
+
+```{r pkgs,eval=FALSE,message=FALSE,warning=FALSE}
+## primary GLMM-fitting packages:
+library("lme4")
+#library("glmmADMB")      ## (not on CRAN: see below)
+library("MCMCglmm")
+library("blme")
+library("MASS")          ## for glmmPQL (base R)
+library("nlme")          ## for intervals(), tundra example (base R)
+## auxiliary
+library("ggplot2")       ## for pretty plots generally
+## ggplot customization:
+theme_set(theme_bw())
+library("grid")          ## for unit() (base R)
+zmargin <- theme(panel.margin=unit(0,"lines")) ## to squash facets together ...
+library("scales")        ## for squish()
+library("gridExtra")     ## for grid.arrange()
+library("proto")         ## for horizontal line range plot
+library("coefplot2") ## coefficient plots (not on CRAN)
+library("coda")      ## MCMC diagnostics
+library("aods3")     ## overdispersion diagnostics
+library("plotMCMC") ## pretty plots from MCMC fits
+library("bbmle")     ## AICtab
+library("pbkrtest")  ## parametric bootstrap
+library("Hmisc")
+## for general-purpose reshaping and data manipulation:
+library("reshape2")
+library("plyr")
+## for illustrating effects of observation-level variance in binary data:
+library("numDeriv")
+library("ggstance")
+library(glmmTMB)
+```
+
+**Red Grouse ticks**
+
+*These data are from Elston et al. 2001 "Analysis of aggregation, a worked example: numbers of ticks on red grouse chicks" Parasitology, 122(5):563-569.*
+
+Elston et al. (2001) used data on numbers of ticks sampled from the heads of red grouse chicks in Scotland to explore patterns of aggregation.
+
+Ticks have potentially large fitness and demographic consequences on red grouse individuals and populations, but Elston et al.’s goal was not to understand the effects of ticks, instead they focused on decomposing patterns of variation into different scales. Specifically, they evaluate dthe numbers of ticks on chicks
+  1. within-brood, 
+  2. within-site,
+  3. by altitude and year. 
+  
+The response variable is counts of the numbers of ticks so should be modeled with either a Poisson or negative binomial error family.
+  
+The fixed effects were:
+  1. altitude (HEIGHT, treated as continuous) 
+  2. year (YEAR, treated as categorical) 
+
+The random effects are nested and include - 
+  1. Individual within brood (INDEX) 
+  2. And brood within location
+  3. With the baseline expected number of ticks (intercept) varying among groups.
+
+As always lets start by downloading and visualizing the data. 
+
+```{r tick0}
+tickdata = read.table("Elston2001_tickdata.txt",header=TRUE, colClasses=c("factor","numeric","factor","numeric","factor","factor"))
+```
+
+```{r ,message=FALSE,warning=FALSE}
+ggplot(tickdata,aes(x=HEIGHT,y=1+TICKS,colour=YEAR))+
+    stat_sum(aes(size=..n..),alpha=0.7)+
+    scale_y_log10()+
+    scale_size_continuous(breaks=c(2,6,10),range=c(2,7))+
+    geom_smooth(method="glm",method.args=list(family=quasipoisson))
+```    
+
+The Poisson GLM fits drawn here ignore the grouping structure that we know is important, but this is nevertheless a useful plot for evaluating the structure of the data (although the `HEIGHT` effect is of secondary interest here) -- we're mostly interested in the relative variances at the individual, brood, and location levels).
+
+Because `INDEX`, `BROOD`, and `LOCATION` are uniquely labeled, we can specify the random effect as *either* `(1|LOCATION)+(1|BROOD)+(1|INDEX)` or  `(1|LOCATION/BROOD/INDEX)`, although the latter might be clearer and more explicit.
+
+Lets try to fit the first way!
+
+```{r}
+tmod_lme4_K <- glmer(TICKS~YEAR+HEIGHT+(1|LOCATION)+(1|BROOD)+(1|INDEX),
+                    family="poisson",data=tickdata,
+                    control=glmerControl(optimizer="bobyqa",
+                    check.conv.grad=.makeCC("warning",2e-3)))
+```
+
+This warning tells us that there are some numerical issues and suggests a solution.  Since we are mostly interested  in the variance partitioning rather than on the effect of altitude....this makes since.
+
+So we will center the height data (as recommended by  Gelman and Hill 2006, Schielzeth 2010). Rescaling the data is a common solution to these kind of numerical errors)
+
+```{r }
+head(tickdata)
+tickdata <- transform(tickdata,cHEIGHT=HEIGHT-mean(HEIGHT))
+```
+
+Notice what this did to the x axis relative to the first plot we made above. 
+
+```{r ,message=FALSE,warning=FALSE}
+ggplot(tickdata,aes(x=cHEIGHT,y=1+TICKS,colour=YEAR))+
+    stat_sum(aes(size=..n..),alpha=0.7)+
+    scale_y_log10()+
+    scale_size_continuous(breaks=c(2,6,10),range=c(2,7))+
+    geom_smooth(method="lm",method.args=list(family=quasipoisson))
+```    
+So now lets fit the model.  You might be wondering so what is the difference between specifying the random effect as `(1|LOCATION)+(1|BROOD)+(1|INDEX)` or  `(1|LOCATION/BROOD/INDEX)`
+```{r,cache=TRUE}
+tmod_lme4_K <- glmer(TICKS~YEAR+cHEIGHT+(1|LOCATION)+(1|BROOD)+(1|INDEX),
+                    family=poisson,data=tickdata,
+                    control=glmerControl(optimizer="bobyqa",
+                           check.conv.grad=.makeCC("warning",2e-3)))
+
+tmod_lme4_L <- glmer(TICKS~YEAR+cHEIGHT+(1|LOCATION/BROOD/INDEX),
+                    family=poisson,data=tickdata,
+                    control=glmerControl(optimizer="bobyqa",
+                           check.conv.grad=.makeCC("warning",2e-3)))
+VarCorr(tmod_lme4_K)
+VarCorr(tmod_lme4_L)
+```
+
+Well if you examine the estimates above, you can see there is no difference.  So you can use either and functionaly they are partitioning the variance among levels in the same way. However, the later forces you to be explicit about the nesting structrue. Lets examine the output
+
+```{r tsum1}
+print(summary(tmod_lme4_L),corr=FALSE)
+```
+This all looks reasonable. In fact by rescaling heigh so that it is centered on the mean (at zero) the interpretation of the height is more biologically reasonable becuase we now get a sensible intercept. This is becuase the estimate for the intercept is given for the value where the x axis = 0. So by centering at zero the intercept is explcitly giving us the number of ticks at the average altitude. If we had not rescaled the x axis then the intercept would correspond, ridiculously, to the expected number of ticks per grouse at sea level.
+
+The other parameters are sensible, and the variance is approximately equally divided between random-effects levels (when we work with variance decomposition it makes sense to interpret the random effects on the variance rather than the standard deviation scale).
+
+
+**Diagnostics**
+```{r}
+plot(tmod_lme4_L,residuals(.) ~(fitted(.)))
+```
+
+
+
+The diagnostic plot is clearer if we plot the fitted values on the log scale:
+```{r }
+plot(tmod_lme4_L,residuals(.) ~log(fitted(.)))
+```
+
+Lets look at these residuals using the scaled residuals using ggplot...that might be even more infomrative.  `ggplot(fortify(.))` puts the fitted values on the log scale by default.  Here is a scale-location plot, which shows some tendency of the variance of the residuals to decrease with the mean:
+
+```{r ,message=FALSE}
+ggplot(fortify(tmod_lme4_L),
+       aes(x=.fitted,y=sqrt(abs(.scresid))))+geom_point()+
+    geom_smooth(colour="red",alpha=0.3)
+```
+
+We can look at the residuals grouped by location:
+```{r }
+plot(tmod_lme4_L,LOCATION~resid(.,type="pearson"))
+```
+
+`ggplot` makes it a little bit easier to re-order the locations by mean residual as we have done in the past:
+```{r }
+ff <- fortify(tmod_lme4_L)
+ff <- transform(ff,LOCATION=reorder(LOCATION,.resid,fun=MEAN,sort=sort))
+ggplot(ff, aes(x=LOCATION,y=.resid))+geom_boxplot(fill="gray")+coord_flip()
+```
+
+We can also look at the conditional modes:
+```{r t_ranef_dotplot,fig.width=10}
+dd <- dotplot(ranef(tmod_lme4_L,condVar=TRUE))
+do.call(grid.arrange,c(dd,list(nrow=1)))
+```
+
+The residuals and estimated conditional modes all seem visually reasonable . Notice there is no test for overdispersion since these models include an (OLRE) observation-level random effect as part of the underlying question.  As discussed previously, adding an OLRE has been shown to solve overdispersion problems.
+
+  
+**Inference**
+
+*Testing significance of random effects*
+It is generally not recommended to do test of significance for random effects or model simplification by dropping non significant random effects terms...because it leads to sacrificial pseudoreplication.  However there may be some instances where the question may focus on whether a particular treatment caused an increase in variance.  You can test for significance of random effects. The most common way to do this is to use a likelihood ratio test, i.e. fit the full and reduced models (the reduced model is the model with the focal variance(s) set to zero)
+For instance
+```{r}
+ m1<- glmer(TICKS~YEAR+cHEIGHT+(1|LOCATION/BROOD/INDEX),
+                    family=poisson,data=tickdata,
+                    control=glmerControl(optimizer="bobyqa",
+                           check.conv.grad=.makeCC("warning",2e-3)))
+m2=update(m1,.~YEAR+cHEIGHT+(1|LOCATION/BROOD))
+m3=update(m2,.~ YEAR+cHEIGHT+(1|LOCATION))
+anova(m1,m2,m3)
+```
+
+Getting confidence intervals is a really computationally intensive process for these multilevel models!!!
+
+
+```{r ,cache=TRUE,warning=FALSE}
+pp <- profile(tmod_lme4_L)
+tmod_lme4_ciprof <- confint(pp)
+```
+
+```{r ,cache=TRUE,warning=FALSE}
+## this chunk takes forever, and despite the caching we can
+##  too easily trigger a re-build; you can fake this by loading from
+##  a file
+#save(fn,file="~/Dropbox/fn")
+fn <- load("~/Dropbox/Stats - 2020/R for data science/tmod_lme4_ciboot.RData")
+
+if (file.exists(fn)) {
+  load(fn)
+} else {
+   tmod_lme4_ciboot <- confint(tmod_lme4_L,method="boot",
+                            nsim=500,quiet=TRUE,seed=101)
+   save("tmod_lme4_ciboot",file="~/Dropbox/Stats - 2020/R for data science/tmod_lme4_ciboot.RData")
+}
+```
+
+**Inference on Random Effects**
+If you are interested in the partitioning of variances across levels, report among-group variation as random-effect variances, or proportions of variance  If you are more interested in the fixed effects, report among-group variation as random-effect standard deviations, as these are directly comparable to the corresponding fixed effects. 
+
+```{r}
+library(broom)
+g0 <- tidy(tmod_lme4_L,conf.int=TRUE)
+g0$term <- simplify_term(g0$term)
+g1 <- g0[,c("term","estimate","conf.low","conf.high")]  ##Wald CI
+g1<-g1[c(5:7),]
+g1_prof <- g1
+g1_prof[,c("conf.low","conf.high")] <- tmod_lme4_ciprof[c(1:3),] ##Profile CI
+g1_boot <- g1
+g1_boot[,c("conf.low","conf.high")] <- tmod_lme4_ciboot[c(1:3),] ##Bootstrap CI
+ff <- function(x,CI) {
+    data.frame(x,CI=CI)
+}
+g2 <- do.call(rbind,mapply(ff,list(g1,g1_prof,g1_boot),
+                           list("Wald","profile", "boot"),SIMPLIFY=FALSE))
+g2 <- data.frame(g2,fun="glmer")
+
+```
+
+```{r t_coefs,echo=FALSE,warning=FALSE}
+ggplot(g2,aes(x=term,y=estimate,ymin=conf.low,ymax=conf.high,group=CI))+
+    geom_pointrange(position=position_dodge(width=0.5),
+                    aes(colour=CI,lty=CI))+
+    coord_flip()
+```
+**Reporting**
+Because the random-effects variation is the primary focus, we report the among-group variance rather than standard deviation because we are interested in variance partitioning. 
+ 
+```{r}
+ summary(tmod_lme4_L)
+tmod_lme4_ciboot
+```
+
+ 
+ “Approximately equal amounts of variability occurred at the among-chick, among-brood, and among-location levels (95% Boot strap CIs: Indiviudal= 0.044 to 0.64; Brood = 0.048 to 0.94; Location =  0 to 0.78). The among-brood variance is estimated to be approximately twice the among-chick and among-location variances, but there is considerable uncertainty in the brood/ chick variance ratio, and estimates of the among-location variance are unstable. Year and altitude also have strong effects. In 1996, tick density increased by a factor of 3.3 relative to 1995 (1.18 0.72, 1.6 log units); in 1997 density decreased by 38% ( , 0.61 log units) relative to 1995. Tick density increased by approximately 2% per meter above sea level ( log-units), decreasing by half for every 30 (log( 2)/ 0.024) m of altitude.”
+
+
+**Comparsion with `glmmTMB` and `MCMCglmm`**
+
+Now for comparison we can do the same fit with `glmmTMB` and `MCMCglmm`
+
+```{r t_gAfit,cache=TRUE}
+tmod_gA_L <- glmmTMB(TICKS~YEAR+cHEIGHT+(1|LOCATION/BROOD/INDEX),
+                      family="poisson",data=tickdata)
+
+CIwald <- confint(tmod_gA_L,method="Wald")
+CIprof <- confint(tmod_gA_L,quiet=TRUE)
+```
+
+Since `MCMCglmm` automatically adds an observation-level random effect, we specify only `BROOD` and `LOCATION`, leaving out `INDEX`:
+```{r,cache=TRUE}
+tmod_MG <- MCMCglmm(TICKS~cHEIGHT+YEAR,
+                 random=~BROOD+LOCATION,
+                 family="poisson",data=tickdata,
+                 verbose=FALSE)
+```
+
+Once again we will need to try this with an informative prior.
+
+```{r ,cache=TRUE}
+prior.t <- list(R=list(nu=0.002,V=1),
+                G=list(G1=list(V=1, nu=1, alpha.mu=0, alpha.V=1000),
+                G2=list(V=1, nu=1, alpha.mu=0, alpha.V=1000)))
+```
+
+The names of `G`-elements are ignored; it is their order that matters. Consequently, although the prior elements are named BROOD and LOCATION, because they appear in reverse order to their specification in the random formula the "BROOD" prior is actually associated with the LOCATION effect variance.
+
+```{r ,cache=TRUE}
+tmod_MG2 <- MCMCglmm(TICKS~cHEIGHT+YEAR,
+                     random=~BROOD+LOCATION,
+                     prior=prior.t,
+                     family="poisson",data=tickdata,
+                     verbose=FALSE)
+summary(tmod_MG2)
+```
+
+Comparing results (just the random effects):
+
+First load Ben Bolker's hacked function to extract results...
+
+```{r mcmcCompfun}
+mcmcCompFun <- function(mcmcfit,lme4fit,whichvar=1,include.units=FALSE) {
+    mcmc_ests <- rbind(
+        melt(data.frame(type="fixed",
+                        as.data.frame(mcmcfit$Sol),
+                  check.names=FALSE)),
+        melt(data.frame(type="random",
+                      as.data.frame(mcmcfit$VCV),
+                      check.names=FALSE)))
+    ff <- fixef(lme4fit)
+    aa <- as.data.frame(VarCorr(lme4fit))
+    lme4res <- rbind(data.frame(type="fixed",variable=names(ff),
+                                value=ff),
+                     data.frame(type="random",
+                                variable=aa$grp[whichvar],
+                                value=aa$sdcor[whichvar]))
+    ss2 <- summary(mcmcfit)
+    fixres <- data.frame(type="fixed",variable=rownames(ss2$solutions),
+                              value=ss2$solutions[,"post.mean"])
+    vcvres <- data.frame(type="random",
+                          variable=colnames(mcmcfit$VCV),
+                          value=c(ss2$Gcovariances[,"post.mean"],
+                          ss2$Rcovariances[,"post.mean"]))
+    MGres <- rbind(fixres,vcvres[whichvar,])
+    allres <- rbind(data.frame(sum="MCMCglmm mean",MGres),
+                    data.frame(sum="lme4 MLE",lme4res))
+    list(mcmc_ests=mcmc_ests,allres=allres)
+}
+
+```
+
+
+```{r tmod_violins,echo=FALSE,message=FALSE}
+tmod_comp <- mcmcCompFun(tmod_MG2,tmod_lme4_L,whichvar=1:3)
+tmod_comp$mcmc_ests <- within(tmod_comp$mcmc_ests,
+{
+   variable <- factor(variable,
+                      levels=c("(Intercept)","cHEIGHT","YEAR1","YEAR2",
+                      "BROOD","LOCATION","units"),
+                      labels=c("(Intercept)","height","year=1996","year=1997",
+                      "brood","location","chick"))
+})
+
+v2 <- as.character(tmod_comp$allres$variable)
+conv <- list(list("year=1996",c("YEAR1","YEAR96")),
+             list("year=1997",c("YEAR2","YEAR97")),
+                 list("height","cHEIGHT"),
+                 list("brood",c("BROOD","BROOD:LOCATION")),
+                 list("location","LOCATION"),
+                 list("chick",c("INDEX:(BROOD:LOCATION)","units")))
+    for (i in seq_along(conv)) {
+        v2[v2 %in% conv[[i]][[2]]] <- conv[[i]][[1]]
+    }
+    v2 <- factor(v2,levels=c("(Intercept)",sapply(conv,"[[",1)))
+tmod_comp$allres$variable <- v2
+tmod_comp$allres <- subset(tmod_comp$allres,variable!="(Intercept)")
+v0 <- ggplot(subset(tmod_comp$mcmc_ests,
+                    type=="random"),
+             aes(variable,value))
+v0 + geom_violin(fill="gray") +
+  geom_point(data=subset(tmod_comp$allres,type=="random"),aes(colour=sum))+
+    scale_colour_brewer(palette="Set1")+facet_wrap(~type,scale="free")
+```
+As we have come to expect, the trace plots for the default `MCMCglmm` run are a bit problematic:
+```{r tmod_MG_diag1}
+tfun <- function(mod) {
+    plotTrace(as.mcmc(cbind(mod$Sol,mod$VCV)))
+}
+tfun(tmod_MG)
+```
+
+The adjusted run is a bit better:
+```{r tmod_MG_diag2}
+tfun(tmod_MG2)
+```
+
+Using deterministic algorithms (lme4 and glmmADMB) gave positive estimates for all of the variances,variances, but MCMCglmm disagreed; unless we added a prior, it estimated the among-location variance as nearly zero, suggesting that the separation of variation into among-brood vs. among-location components is unstable.
+
+To confirm this for hte updated MCMC model we can look at the density plots from the MCMC chains
+```{r densityplot1,fig.height=4}
+plotDens(tmod_MG2$VCV,from=0,layout=c(3,1),asp="fill",las=1)
+``` 
+Using the results from `MCMCglmm` we can compute the posterior probability (for example) that the among-brood variance is greater than the among-chick variance:
+
+```{r misc}
+with(as.data.frame(tmod_MG2$VCV), mean(BROOD>units))
+```
+
+We can also compute the distribution of the ratio of among-brood to among-chick variance ...
+```{r misc2}
+with(as.data.frame(tmod_MG2$VCV),summary(BROOD/units))
+```
+...  or the 95% quantiles ...
+```{r misc2_quantiles}
+with(as.data.frame(tmod_MG2$VCV), quantile(BROOD/units,c(0.025,0.975)))
+```
+... or the highest posterior density intervals ...
+```{r misc2_hpd}
+HPDinterval(mcmc(with(as.data.frame(tmod_MG2$VCV),BROOD/units)))
+```
+
+
+Compare all the different approaches...
+
+```{r assemble_tmod,echo=FALSE}
+library("broom.mixed")
+library("dotwhisker")
+simplify_term <- function(x,first=TRUE) {
+    if (first) {
+        gsub(".*\\.([[:alpha:]]+):?.*","\\1",x)
+    } else {
+        gsub(".*[.:]([[:alpha:]]+)$","\\1",x)
+    }
+}
+ttfun <- function(cc,lab) {
+    data.frame(var=rownames(cc),
+               est=cc[,"Estimate"],
+               lwr=cc[,"2.5%"],
+               upr=cc[,"97.5%"],
+               fun=lab)
+}
+nms <- c("group","estimate")
+c4 <- tidy(tmod_lme4_L,effects="ran_pars",scales="vcov")[,nms]
+c4$group <- simplify_term(c4$group)
+c4[,c("conf.low","conf.high")] <- tmod_lme4_ciprof[1:3,]^2
+c4$CI <- "profile"
+c4B <- c4
+c4B[,c("conf.low","conf.high")] <- tmod_lme4_ciboot[1:3,]^2
+c4B$CI <- "boot"
+c4$fun <- c4B$fun <- "glmer"
+cgA <- tidy(tmod_gA_L,effects="ran_pars",scales="vcov")[,nms]
+cgA[,c("conf.low","conf.high")] <- CIwald[1:3,]^2
+cgA$CI <- "Wald"
+cgAB <- c4
+cgAB[,c("conf.low","conf.high")] <- CIprof[1:3,]^2
+cgAB$CI <- "Profile"
+cgA$CI <- "Wald"
+cgA$fun <- "glmmTMB"
+cMG2 <- tidy(tmod_MG2,effects="ran_pars",conf.int=TRUE)
+cMG2 <- transform(cMG2,term=ifelse(term=="units","INDEX",
+                                   term))
+cMG2 <- transform(cMG2,group=ifelse(group=="Residual","INDEX:(BROOD:LOCATION)",group))
+cMG2 <- transform(cMG2,group=ifelse(group=="BROOD","BROOD:LOCATION",group))
+cMG2 <- cMG2[,c("group", "estimate","conf.low","conf.high")]
+cMG2$CI <- "MCMC"
+cMG2$fun <- "MCMCglmm"
+tmod_Results <- rbind(c4,c4B,cgA,cgAB,cMG2)
+```
+
+```{r ,echo=FALSE,warning=FALSE}
+ggplot(tmod_Results,aes(x=group,y=estimate,ymin=conf.low,ymax=conf.high))+
+    geom_pointrange(position=position_dodge(width=0.5),
+                    aes(colour=fun,lty=CI))+
+    coord_flip()
+```
+
