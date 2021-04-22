@@ -1,0 +1,51 @@
+---
+title: "Modern Approaches to Data Analysis Quesiton 1"
+output: html_notebook
+---
+
+Please analyze these data and keep an R notebook, showing all the steps and including a narrative of your analysis.  This narrative should include all steps, taken to determine the proper analysis, diagnostics, choice of inference, and interpretation.  This will include coding the correct analysis, inital exploratory plots, diagnostic plots, and inferential methods, and data summaries (e.g. CIs, model predictions, etc.) Please submit your R notebook and a separate word or pdf file that contains the final plot and 1 paragraph explanation/interpretation of your findings (please collate all of your answers into a single word or pdf, but keep your R notebooks separate). 
+
+
+Here are many of the libraries you may need, but may not be comprehensive so dont hesitate to add more that you need.
+```{r}
+require(qualityTools)
+require(lme4)
+require(ggplot2)
+require(dotwhisker)
+require(bbmle)
+require(emdbook)
+require(AICcmodavg)
+require(glmmTMB)
+require(gridExtra)
+library(blme)
+library(tidyverse)
+require(broom.mixed)
+```
+
+**Problem 1 - Beetles**
+
+**Background and Question**
+We will begin with a small data set from an experiment that looked at the mortality of flour beetles *Tribolium confusa* exposed to different doses of a pesticide (from Bliss 1935).
+
+**The Experimental Design**
+Eight groups of *Tribolium confusa* beetles were exposed to carbon disulphide for 5 hours.  
+
+Below I have provided two views of the data.
+Data Structure
+
+```{r view_data_str, echo=FALSE}
+data(beetle)
+head(beetle) #View the first few lines!
+str(beetle)
+```
+
+
+**Question 1**
+What is the probability of survival of beetles across doses of the insecticide (i.e. different concentrations of carbon disulphide in milligrams per liter). 
+
+
+As the first step in your analysis add a new column to the data for 'number_survived'.  Your answer should include an initial data visualization step, a description of your reasoning for analysis, the analysis and diagnostics as needed, a final figure, and brief conclusion statement about what the data show.
+
+
+
+

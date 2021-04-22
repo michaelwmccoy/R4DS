@@ -1,0 +1,49 @@
+---
+title: "Modern Approaches to Data Analysis Quesiton 3"
+output: html_notebook
+---
+
+Please analyze these data and keep an R notebook, showing all the steps and including a narrative of your analysis.  This narrative should include all steps, taken to determine the proper analysis, diagnostics, choice of inference, and interpretation.  This will include coding the correct analysis, initial exploratory plots, diagnostic plots, and inferential methods, and data summaries (e.g. CIs, model predictions, etc.) Please submit your R notebook and a separate word or pdf file that contains the final plot and 1 paragraph explanation/interpretation of your findings (please collate all of your answers into a single word or pdf, but keep your R notebooks separate). 
+
+
+Here are many of the libraries you may need, but may not be comprehensive so do not hesitate to add more that you need.
+```{r}
+require(qualityTools)
+require(lme4)
+require(ggplot2)
+require(dotwhisker)
+require(bbmle)
+require(emdbook)
+require(AICcmodavg)
+require(glmmTMB)
+require(gridExtra)
+library(blme)
+library(tidyverse)
+require(broom.mixed)
+```
+
+
+**##########################################################################**
+
+**Problem 3 - Number of parasites on fish**
+
+**Background**
+Download the data set "Fish_parasites.csv" from Canvas. This data file contains data for the number of parasites found on fish sampled at different distances from cooling towers of a nuclear power plant. The goal of the study was to determine if the elevated temperatures from cooling tower effluent affects parasite prevalence and virulence in fish.  The number of encysted parasites were counted for fish from 20 different independent sites. Although it was not part of the original sampling design, the researchers discovered that there was  an additional and potentially confounding factor of salinity. The researchers noted the salinity of each site in their data file by classifying each site as being either high or low salinity.
+
+**Specific Question**
+Determine whether the abundance of parasites increases with distance from power plants and to what extent does salinity influence those effects.  I recommend using Likelihood Ratio Test for making inferences, but you may use any approach.
+
+```{r , echo = FALSE}
+parasite=read.csv("parasite.csv")
+head(parasite)
+```
+A peak at the data
+
+```{r Q3_firstlook}
+ggplot(data=parasite,aes(x=distance,y=counts,color=site))+geom_point()
+```
+
+**Specific Question**
+Determine whether the abundance of parasites increases with distance from power plants.
+
+

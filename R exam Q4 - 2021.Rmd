@@ -1,0 +1,102 @@
+---
+title: "Modern Approaches to Data Analysis Quesiton 4"
+output: html_notebook
+---
+
+Please analyze these data and keep an R notebook, showing all the steps and including a narrative of your analysis.  This narrative should include all steps, taken to determine the proper analysis, diagnostics, choice of inference, and interpretation.  This will include coding the correct analysis, initial exploratory plots, diagnostic plots, and inferential methods, and data summaries (e.g. CIs, model predictions, etc.) Please submit your R notebook and a separate word or pdf file that contains the final plot and 1 paragraph explanation/interpretation of your findings (please collate all of your answers into a single word or pdf, but keep your R notebooks separate). 
+
+
+Here are many of the libraries you may need, but may not be comprehensive so don't hesitate to add more that you need.
+```{r}
+require(qualityTools)
+require(lme4)
+require(ggplot2)
+require(dotwhisker)
+require(bbmle)
+require(emdbook)
+require(AICcmodavg)
+require(glmmTMB)
+require(gridExtra)
+library(blme)
+library(tidyverse)
+require(broom.mixed)
+```
+
+**Problem 4-Plasticity in Life Stage Transitions**
+
+**Background**
+
+The effects of flexible hatching timing by red-eyed treefrog (*Agalychnis callidryas*) on interactions with predators and food levels and subsequent phenotype development
+
+
+There are 2 data sets labeled with the short names 'RxP' and 'RxP_aggregated'. 
+
+RxP stands for 'Resource-by-Predation', which was the nature of the experiment. The RxP has data for every individual animal measured in the experiment, whereas the RxP_aggregated data file has tank averages and a few additional columns of data that you may be interested in :). In the descriptions below, column names fro the data files appear in brackets e.g. [column name].
+
+**Experimental Design**
+The experiment consisted of 96, 400 L mesocosm tanks arrayed in an open field in Gamboa, Panama. The mesocosms were spatially arranged in 12 blocks of 12 tanks each. Each block consisted of 1 tank from each of 12 unique treatment combinations. Each tank began with 50 tadpoles and the experiment ended when all tadpoles reached metamorphosis or had died. Experimental treatments were as follows:
+
+Hatching age [Hatch] (E = early - 4 days post-oviposition or L= late-6 days post-oviposition)
+  
+Predators [Pred] (Control, Nonlethal or Lethal dragonfly larvae)
+
+Resources [Res] (Lo = 0.75 g or Hi = 1.5 g food level, added every 5 days)
+
+View the data: Full data set
+```{r view_dat4, echo=FALSE}
+RxP<-read.csv("RxP.csv")
+str(RxP)
+head(RxP)
+RxP$Block=factor(RxP$Block)
+RxP$Tank.Unique=factor(RxP$Tank.Unique)
+```
+
+View the data: Aggregated data set
+
+```{r view_dat5, echo=FALSE}
+RxP_aggregate<-read.csv("RxP_aggregated.csv")
+str(RxP_aggregate)
+head(RxP_aggregate)
+```
+
+**Additional information about the data**
+
+We also have other identifiers in the  above data sets that you need to be aware of.
+
+Individuals are numbered in column [Ind], and blocks are indicated in column [Block]. A few variables are listed twice but are coded in different ways. For example, there is a column titled [Tank] and one titled [Tank.Unique]. As stated earlier, there are 12 tanks in each of 12 blocks. The variable Tank lists what number a tank is (1-12) in a given block, whereas Tank.Unique gives each tank a unique number out of the entire 96.
+
+**General Objectives** 
+
+The investigators wanted to know how the timing of hatching in a frog embryo might affect its survival and development to metamorphosis under various combinations of predators and resource availability. 
+
+**What is Metamorphosis and what did they measure?**
+Metamorphosis is a process that takes time. This process is generally defined as the time from when the froglets arms erupt from the body (they develop under the skin) until when the tail is fully reabsorbed into the body. The froglet may choose to leave the water early or late during that process. Thus, several measurements were taken when the froglets first left the water and several more when the tail was fully reabsorbed. 
+
+Specifically during the process of metamorphosis, the researchers measured the following response variables: 
+
+1. Age, both in terms of time since eggs were oviposited (days post oviposition [Age.dpo]) and time since emergence from the water as a froglet began [Age.FromEmergence] (defined as Day 1)
+
+2. Snout-vent length at emergence [SVL.initial]
+
+3. Tail length at emergence [Tail.initial]
+
+4. Snout-vent length at completion of tail resorption [SVL.final]
+
+5. Mass at completion of tail resorption [Mass.final]
+
+6. Number of days needed for each metamorph to fully resorb the tail [Resorb.days]
+
+7. Survival [NumAlive] which is the number of individuals alive (out of 50) at the end of the experiment (aggregated data only).
+
+During the course of the experiment disease broke out in 18 of the mesocosms containing Nonlethal predators and thus those tanks have been excluded from this data.
+
+**Specific Questions**
+
+**Question 1**
+Using data for individual animals determine if mass at metamorphosis varied according to predators and resources.
+
+
+
+
+**Question 2**
+ Were there differences in survival due to resource level or predators?

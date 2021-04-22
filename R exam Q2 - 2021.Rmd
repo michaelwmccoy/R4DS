@@ -1,0 +1,42 @@
+---
+title: "Modern Approaches to Data Analysis Quesiton 2"
+output: html_notebook
+---
+
+Please analyze these data and keep an R notebook, showing all the steps and including a narrative of your analysis.  This narrative should include all steps, taken to determine the proper analysis, diagnostics, choice of inference, and interpretation.  This will include coding the correct analysis, initial exploratory plots, diagnostic plots, and inferential methods, and data summaries (e.g. CIs, model predictions, etc.) Please submit your R notebook and a separate word or pdf file that contains the final plot and 1 paragraph explanation/interpretation of your findings (please collate all of your answers into a single word or pdf, but keep your R notebooks separate). 
+
+
+Here are many of the libraries you may need, but may not be comprehensive so do not hesitate to add more that you need.
+```{r}
+require(qualityTools)
+require(lme4)
+require(ggplot2)
+require(dotwhisker)
+require(bbmle)
+require(emdbook)
+require(AICcmodavg)
+require(glmmTMB)
+require(gridExtra)
+library(blme)
+library(tidyverse)
+require(broom.mixed)
+```
+
+**Problem 2 - Plant Diversity experiment**
+
+**Background and Question**
+Download the "plant diversity data" data set (available from Canvas site). This file contains data for counts of the number of species in experimental grassland plots that received two treatments fully crossed treatments of fertilization and light addition to plants in a grassland understory. In grassland systems fertilization often increases productivity but leads to a loss of diversity. One hypothesis about why this occurs in grasslands is that fertilization leads to enhanced growth and thus asymmetric competition for light (taller plants shade out shorter ones). This experiment tests this hypothesis by restoring light levels to the understory.
+
+**The Experimental Design**
+The design is a fully crossed design of two factors: 1) fertilization treatment (F) 2) addition of light (L).
+
+```{r}
+plants=read.csv("~plant diversity data.csv")
+head(plants,10)
+ggplot(data=plants,aes(x=FL,y=Diversity))+geom_boxplot(size=2)
+```
+
+
+**Specific Question**
+
+Determine whether the loss of species can be prevented by counteracting the shading caused by the increased production of biomass (shading) following fertilization. I recommend using an information theoretic approach for making inferences, but you are not bound to that approach.
